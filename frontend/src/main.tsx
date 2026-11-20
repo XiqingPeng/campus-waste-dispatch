@@ -122,7 +122,11 @@ function App() {
   const station = snapshot?.stations.find((item) => item.id === stationId) ?? snapshot?.stations[0];
 
   useEffect(() => {
-    const onHash = () => { setView(currentView()); setNotice(''); };
+    const onHash = () => {
+      setView(currentView());
+      setNotice('');
+      window.scrollTo(0, 0);
+    };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
@@ -169,7 +173,7 @@ function App() {
         </div>
       </header>
 
-      <main className="layout" id="main-content" tabIndex={-1}>
+      <main className={view === 'cleaner' ? 'layout cleaner-layout' : 'layout'} id="main-content" tabIndex={-1}>
         <section className="page-heading" aria-labelledby="page-title">
           <div>
             <div className="location"><MapPin size={16} /> {t('宿舍区')} <span>{t('示范站点')}</span></div>

@@ -75,7 +75,7 @@ function line(ctx: CanvasRenderingContext2D, path: string, color: string, width:
   ctx.stroke(new Path2D(path));
 }
 
-function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size = 17, color = '#354c54') {
+function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size = 17, color = '#283f37') {
   ctx.font = `650 ${size}px system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -88,17 +88,21 @@ function building(
   height: number, angle: number, palette: 'academic' | 'residential' | 'civic',
 ) {
   const colors = {
-    academic: ['#e1ebf5', '#a5b9d0'],
-    residential: ['#f5e6e4', '#d3aba9'],
-    civic: ['#ede7f4', '#b8a9ce'],
+    academic: ['#f5f3e8', '#909e94'],
+    residential: ['#f3e5d6', '#b88770'],
+    civic: ['#e4e9dc', '#7b9987'],
   }[palette];
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(angle * Math.PI / 180);
   const l = -width / 2;
   const t = -height / 2;
-  area(ctx, `M${l} ${t}h${width * 0.71}v5h${width * 0.29}v${height - 5}h-${width}Z`, colors[0], colors[1]);
-  line(ctx, `M${l + 5} ${t + 5}h${width * .57}`, '#ffffffb5', 1.3);
+  const footprint = `M${l} ${t}h${width * .71}v5h${width * .29}v${height - 5}h-${width}Z`;
+  ctx.translate(2, 3);
+  area(ctx, footprint, '#4d65522c');
+  ctx.translate(-2, -3);
+  area(ctx, footprint, colors[0], colors[1]);
+  line(ctx, `M${l + 5} ${t + 5}h${width * .57}`, '#ffffffc9', 1.3);
   ctx.restore();
   label(ctx, text, x, y + 2, palette === 'residential' ? 15 : 18);
 }
@@ -113,50 +117,65 @@ function oval(ctx: CanvasRenderingContext2D, x: number, y: number, width: number
 export function drawCampus(ctx: CanvasRenderingContext2D, t: Translator) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  grounds.forEach((path, index) => area(ctx, path, index === 0 ? '#ecf1e4' : '#e0ead5'));
-  area(ctx, 'M840 -25C848 58 909 136 936 235S977 355 1020 401L1037 357C994 314 989 253 969 192S900 43 882 -25Z', '#cee5eb', '#a9d0db');
-  area(ctx, 'M-20 455C67 450 106 478 134 519L111 542Q58 485 -20 485Z', '#cee5eb', '#afd2db');
-  area(ctx, 'M219 -10Q231 50 231 110T227 217Q214 256 237 298L252 296Q235 254 243 223T248 115Q252 45 236 -10Z', '#c9e4eb', '#a8ced9');
+  grounds.forEach((path, index) => area(ctx, path, index === 0 ? '#e8e5d7' : '#d8dfce', index ? '#bfc9b7' : undefined));
+  for (let x = 0; x < mapWidth; x += 38) line(ctx, `M${x} 0V${mapHeight}`, '#637b6b17', 1);
+  for (let y = 0; y < mapHeight; y += 38) line(ctx, `M0 ${y}H${mapWidth}`, '#637b6b17', 1);
+  area(ctx, 'M840 -25C848 58 909 136 936 235S977 355 1020 401L1037 357C994 314 989 253 969 192S900 43 882 -25Z', '#9bb6b6', '#819d9b');
+  area(ctx, 'M-20 455C67 450 106 478 134 519L111 542Q58 485 -20 485Z', '#a8bfc2', '#8fa9ab');
+  area(ctx, 'M219 -10Q231 50 231 110T227 217Q214 256 237 298L252 296Q235 254 243 223T248 115Q252 45 236 -10Z', '#a9bfc0', '#8fa9ab');
+  const residenceBoundary = 'M451 326L904 324 960 435 965 510 457 529Z';
+  area(ctx, residenceBoundary, '#c77f4c17');
 
   for (const [index, path] of roads.entries()) {
     const width = index === 0 ? 22 : index < 7 ? 9 : 5;
-    line(ctx, path, index === 0 ? '#c1cbd0' : '#d1dacd', width + 3);
-    line(ctx, path, index === 0 ? '#d8dfe2' : '#fbfcf7', width);
-    if (index === 0) line(ctx, path, '#fbfcf7', 1.4);
+    line(ctx, path, index === 0 ? '#9ca59b' : '#bec6b7', width + 2);
+    line(ctx, path, index === 0 ? '#c6c9bb' : '#f9f6e9', width);
+    if (index === 0) line(ctx, path, '#f9f6e9', 1.4);
   }
+  ctx.save();
+  ctx.setLineDash([7, 6]);
+  line(ctx, residenceBoundary, '#a06544a6', 1.6);
+  ctx.restore();
 
   for (let i = 0; i < 42; i += 1) {
     const x = 456 + (i * 119) % 148;
     const y = 31 + (i * 47) % 273;
-    if (y < 177 || y > 230) oval(ctx, x, y, 2.4 + i % 3, 2.6 + i % 3, 0, '#bfd3b283');
+    if (y < 177 || y > 230) {
+      oval(ctx, x + 1, y + 1, 3 + i % 3, 3 + i % 3, 0, '#4f6e5729');
+      oval(ctx, x, y, 2.6 + i % 3, 2.6 + i % 3, 0, '#7f9a79');
+    }
   }
 
   westLabs.forEach(([x, y], i) => building(ctx, 'W' + (4 - i), [x, y], 128, 32, i === 0 ? 12 : -7, 'academic'));
   eastLabs.forEach(([x, y], i) => building(ctx, 'E' + (4 - i), [x, y], 130, 32, i < 2 ? -10 : 9, 'academic'));
   building(ctx, t('图书馆'), [240, 69], 92, 33, 0, 'civic');
-  oval(ctx, 270, 155, 23, 29, 18, '#eee6d1');
+  oval(ctx, 270, 155, 23, 29, 18, '#e4d4ae');
   label(ctx, t('食堂'), 270, 156, 15);
   label(ctx, t('演讲厅'), 242, 198, 14);
 
-  area(ctx, 'M172 396Q190 331 236 330Q285 330 311 400L295 409Q272 350 236 350Q200 350 189 403Z', '#e5ebe7', '#b0beb5');
-  oval(ctx, 239, 406, 27, 27, 0, '#d5e9dc');
-  oval(ctx, 239, 406, 19, 19, 0, '#cce5eb');
-  oval(ctx, 239, 406, 9, 9, 0, '#e7d9b5');
+  area(ctx, 'M172 396Q190 331 236 330Q285 330 311 400L295 409Q272 350 236 350Q200 350 189 403Z', '#eeeade', '#91a095');
+  oval(ctx, 239, 406, 27, 27, 0, '#bac9b7');
+  oval(ctx, 239, 406, 19, 19, 0, '#9ab4b6');
+  oval(ctx, 239, 406, 9, 9, 0, '#e2ca9c');
   label(ctx, t('行政大楼'), 237, 362, 16);
   building(ctx, t('活动中心'), [368, 372], 110, 34, 15, 'civic');
 
-  oval(ctx, 754, 99, 100, 64, 43, '#d4a98a');
-  oval(ctx, 754, 99, 95, 59, 43, '#e9c2a3');
-  oval(ctx, 754, 99, 85, 49, 43, '#a8c9a0');
-  oval(ctx, 719, 244, 79, 47, -24, '#a8bea3');
-  oval(ctx, 719, 244, 73, 41, -24, '#e1eadc');
-  label(ctx, t('体育场'), 754, 99, 19, '#344b3e');
-  label(ctx, t('体育馆'), 719, 243, 18, '#344b3e');
-  label(ctx, t('体育区'), 867, 120, 15, '#587356');
-  label(ctx, t('教学科研区'), 114, 41, 16, '#526a90');
-  label(ctx, t('南区宿舍'), 685, 312, 17, '#895d62');
+  oval(ctx, 754, 99, 100, 64, 43, '#a27058');
+  oval(ctx, 754, 99, 97, 61, 43, '#c78f73');
+  oval(ctx, 754, 99, 93, 57, 43, '#ecd2b9');
+  oval(ctx, 754, 99, 92, 56, 43, '#c79073');
+  oval(ctx, 754, 99, 86, 50, 43, '#f3ddbd');
+  oval(ctx, 754, 99, 84, 48, 43, '#aabf9d');
+  oval(ctx, 722, 248, 79, 47, -24, '#4d65522c');
+  oval(ctx, 719, 244, 79, 47, -24, '#95a990');
+  oval(ctx, 719, 244, 76, 44, -24, '#e5e9db');
+  label(ctx, t('体育场'), 754, 99, 19);
+  label(ctx, t('体育馆'), 719, 243, 18);
+  label(ctx, t('体育区'), 867, 120, 15, '#436747');
+  label(ctx, t('教学科研区'), 114, 41, 16, '#3c5c64');
+  label(ctx, t('南区宿舍'), 685, 312, 17, '#86492f');
 
   residences.forEach(({ label: name, x, y, angle }) => building(ctx, name, [x, y], 57, 25, angle, 'residential'));
   label(ctx, t('主入口'), 238, 519, 17);
-  label(ctx, t('笃学路'), 615, 551, 15, '#5b6f70');
+  label(ctx, t('笃学路'), 615, 551, 15, '#455d53');
 }

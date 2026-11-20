@@ -1,5 +1,5 @@
 import { ArrowUpRight, CircleHelp, Clock3, Lightbulb, MapPin, SignpostBig } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Capture } from './capture';
 import { availability, binLabels, categories, categoryOrder } from './domain';
 import type { Result, Snapshot, Station } from './domain';
@@ -10,6 +10,12 @@ export function Student({ state, station, visible, connected }: {
 }) {
   const { t, text } = useLocale();
   const [result, setResult] = useState<Result | null>(null);
+  const guidancePanel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!result || !visible || !window.matchMedia('(max-width: 780px)').matches) return;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    guidancePanel.current?.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
+  }, [result, visible]);
   const guidance = result?.category && state && station && connected
     ? availability(state, station, result.category)
     : null;
@@ -23,7 +29,7 @@ export function Student({ state, station, visible, connected }: {
     <div className="student-grid">
       <Capture onResult={setResult} visible={visible} />
       <div className="student-right">
-        <section className="panel guidance-panel" aria-labelledby="guidance-title">
+        <section className="panel guidance-panel" ref={guidancePanel} aria-labelledby="guidance-title">
           <div className="panel-heading">
             <span className="section-icon"><SignpostBig size={21} /></span>
             <div>
