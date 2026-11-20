@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { BarChart3, Settings2, Sparkles } from 'lucide-react';
+import { BarChart3, Sparkles } from 'lucide-react';
 import { errorText } from './api';
 import { useLocale } from './locale';
 import {
   defaultSettings,
-  endpoint,
+  modelChoices,
+  supportsAdvice,
   generateAdvice,
   loadStatistics,
   restoreSettings,
   settingsKey,
 } from './analysis-api';
-import type { Advice, ApiSettings, Statistics } from './analysis-api';
+import type { Advice, ApiSettings, ModelApi, Statistics } from './analysis-api';
 
 export function DispatchAnalysis({
   connected,
@@ -28,8 +29,15 @@ export function DispatchAnalysis({
       return { ...defaultSettings };
     }
   });
-  const [draft, setDraft] = useState(settings);
-  const [showSettings, setShowSettings] = useState(false);
+  const [settingsError, setSettingsError] = useState(false);
+  useEffect(() => {
+    try {
+      localStorage.setItem(settingsKey, JSON.stringify(settings));
+      setSettingsError(false);
+    } catch {
+      setSettingsError(true);
+    }
+  }, [settings]);
   const [stats, setStats] = useState<{ key: string; data: Statistics } | null>(
     null,
   );
@@ -40,10 +48,11 @@ export function DispatchAnalysis({
     [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const serial = useRef(0);
-  const context = JSON.stringify([settings, days, language]);
+  const context = JSON.stringify([settings.adviceModel, days, language]);
   const currentContext = useRef(context);
   currentContext.current = context;
-  const key = context + revision;
+  const key = JSON.stringify([days, language, revision]);
+  const adviceKey = context + revision;
   const currentKey = useRef(key);
   currentKey.current = key;
   const mounted = useRef(true);
@@ -59,7 +68,7 @@ export function DispatchAnalysis({
     setLoading(true);
     setError('');
     try {
-      const data = await loadStatistics(settings, days, language);
+      const data = await loadStatistics(days, language);
       if (
         mounted.current &&
         run === serial.current &&
@@ -76,35 +85,21 @@ export function DispatchAnalysis({
     serial.current++;
     setLoading(false);
     setError('');
-    if (connected && settings.statsMode === 'backend') void refresh();
+    if (connected) void refresh();
     return () => {
       serial.current++;
     };
   }, [connected, key]);
-  function save() {
-    try {
-      if (draft.statsMode === 'custom') endpoint(draft.statsUrl);
-      if (draft.adviceMode === 'custom') endpoint(draft.adviceUrl);
-      if (draft.statsMode === 'custom' && draft.adviceMode === 'deepseek')
-        throw new Error(t('服务端 DeepSeek 使用内置统计，请先切换统计来源。'));
-      localStorage.setItem(settingsKey, JSON.stringify(draft));
-      setSettings({ ...draft });
-      setError('');
-      setShowSettings(false);
-    } catch (cause) {
-      setError(errorText(cause));
-    }
-  }
   async function generate() {
     setGenerating(true);
     setError('');
     try {
-      const data = await loadStatistics(settings, days, language);
+      const data = await loadStatistics(days, language);
       if (!mounted.current || currentContext.current !== context) return;
       if (currentKey.current === key) setStats({ key, data });
-      const result = await generateAdvice(settings, data, language);
+      const result = await generateAdvice(settings.adviceModel, data, language);
       if (mounted.current && currentContext.current === context)
-        setAdvice({ key, data: result });
+        setAdvice({ key: adviceKey, data: result });
     } catch (cause) {
       if (mounted.current) setError(errorText(cause));
     } finally {
@@ -122,9 +117,9 @@ export function DispatchAnalysis({
     }).format(value);
   const source = (value: string) =>
     value === 'backend'
-      ? t('内置后端统计')
+      ? t('工单统计')
       : value === 'rules'
-        ? t('本地规则')
+        ? t('系统基础建议')
         : value;
   const data = stats?.data;
   const max = Math.max(1, ...(data?.hourly ?? []));
@@ -136,7 +131,7 @@ export function DispatchAnalysis({
         </span>
         <div>
           <h2 id="analysis-title">{t('清运分析')}</h2>
-          <p>{t('统计分析与智能建议使用独立接口，可分别选择。')}</p>
+          <p>{t('分别选择用于统计解读和清运建议的模型 API。')}</p>
         </div>
         <div className="analysis-controls">
           <div
@@ -156,147 +151,66 @@ export function DispatchAnalysis({
               </button>
             ))}
           </div>
-          <button
-            className="outline"
-            onClick={() => {
-              setDraft(settings);
-              setShowSettings(!showSettings);
-            }}
-          >
-            <Settings2 size={16} />
-            {t('接口设置')}
-          </button>
         </div>
       </div>
-      {showSettings && (
-        <div className="api-settings">
-          <h3>{t('统计与建议接口')}</h3>
-          <p>{t('仅保存接口地址和选择；模型密钥继续配置在服务端。')}</p>
-          <div className="api-settings-grid">
-            <label>
-              {t('统计分析接口')}
-              <select
-                aria-label={t('统计分析接口')}
-                value={draft.statsMode}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    statsMode: e.target.value as ApiSettings['statsMode'],
-                    adviceMode:
-                      e.target.value === 'custom' &&
-                      draft.adviceMode === 'deepseek'
-                        ? 'rules'
-                        : draft.adviceMode,
-                  })
-                }
-              >
-                <option value="backend">{t('内置后端统计')}</option>
-                <option value="custom">{t('自定义 HTTP 接口')}</option>
-              </select>
+      <div className="model-api-choices">
+        {(['statsModel', 'adviceModel'] as const).map((field) => (
+          <div className="model-api-choice" key={field}>
+            <label htmlFor={field}>
+              {field === 'statsModel' ? (
+                <BarChart3 size={18} />
+              ) : (
+                <Sparkles size={18} />
+              )}
+              {t(
+                field === 'statsModel'
+                  ? '统计分析模型 API'
+                  : '智能建议模型 API',
+              )}
             </label>
-            <label>
-              {t('智能建议接口')}
-              <select
-                aria-label={t('智能建议接口')}
-                value={draft.adviceMode}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    adviceMode: e.target.value as ApiSettings['adviceMode'],
-                  })
-                }
-              >
-                <option value="rules">{t('本地规则')}</option>
-                <option
-                  value="deepseek"
-                  disabled={draft.statsMode === 'custom'}
-                >
-                  {t('服务端 DeepSeek')}
-                </option>
-                <option value="custom">{t('自定义 HTTP 接口')}</option>
-              </select>
-            </label>
-            <label>
-              {t('统计接口地址（GET）')}
-              <input
-                type="url"
-                value={draft.statsUrl}
-                placeholder="https://example.com/statistics"
-                onChange={(e) =>
-                  setDraft({ ...draft, statsUrl: e.target.value })
-                }
-              />
-            </label>
-            <label>
-              {t('建议接口地址（POST）')}
-              <input
-                type="url"
-                value={draft.adviceUrl}
-                placeholder="https://example.com/advice"
-                onChange={(e) =>
-                  setDraft({ ...draft, adviceUrl: e.target.value })
-                }
-              />
-            </label>
-          </div>
-          <p>
-            {t(
-              '自定义接口需要允许 CORS。生成建议时只发送汇总统计；请勿在地址中填写密钥。',
-            )}
-          </p>
-          <details className="api-contract">
-            <summary>{t('查看接口格式')}</summary>
-            <p>
-              GET ?from=ISO&amp;to=ISO&amp;days=7|28&amp;timezone=Asia/Shanghai
-            </p>
-            <pre>
-              {
-                '{ total, resolved?, avg_wait?, hourly: [24 numbers], zones: [{ name, events, bin_count? }] }'
+            <select
+              id={field}
+              value={settings[field]}
+              disabled={generating}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  [field]: e.target.value as ModelApi,
+                })
               }
-            </pre>
-            <p>
-              POST{' '}
-              {
-                '{ period_start, period_end, period_days, timezone, data_source, statistics }'
-              }
-            </p>
-            <pre>
-              {'{ summary, suggestions: [{ action, basis, limitation? }] }'}
-            </pre>
-          </details>
-          <div className="api-buttons">
-            <button className="primary" onClick={save} disabled={generating}>
-              {t('保存接口设置')}
-            </button>
-            <button
-              className="outline"
-              onClick={() => setDraft({ ...defaultSettings })}
             >
-              {t('恢复默认选项')}
-            </button>
+              <option value="none">{t('请选择模型')}</option>
+              {modelChoices.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {text(item.label)}
+                </option>
+              ))}
+            </select>
+            <p className="model-api-help">
+              {field === 'statsModel'
+                ? t(
+                    settings.statsModel === 'none'
+                      ? '用于解读趋势与分区差异。统计图表按工单记录展示。'
+                      : '已选择，模型解读待接入。统计图表按工单记录展示。',
+                  )
+                : t(
+                    settings.adviceModel === 'none'
+                      ? '用于生成清运建议。未选择时可查看系统基础建议。'
+                      : settings.adviceModel === 'deepseek'
+                        ? '生成建议前，需要完成模型配置并进行组内登录。'
+                        : '已选择，该模型待接入，暂不能生成建议。',
+                  )}
+            </p>
           </div>
-        </div>
-      )}
-      <div className="analysis-provider-summary">
-        <span>
-          {t('统计分析接口')}：
-          <b>
-            {settings.statsMode === 'backend'
-              ? t('内置后端统计')
-              : settings.statsUrl}
-          </b>
-        </span>
-        <span>
-          {t('智能建议接口')}：
-          <b>
-            {settings.adviceMode === 'rules'
-              ? t('本地规则')
-              : settings.adviceMode === 'deepseek'
-                ? t('服务端 DeepSeek')
-                : settings.adviceUrl}
-          </b>
-        </span>
+        ))}
       </div>
+      <p className="analysis-provenance" role="status">
+        {t(
+          settingsError
+            ? '本次选择未能保存，刷新后需重新选择。'
+            : '选择会自动保存在此浏览器。',
+        )}
+      </p>
       {error && (
         <p className="callout error" role="alert">
           {text(error)} {t('已有结果会保留，清运操作不受影响。')}
@@ -320,8 +234,7 @@ export function DispatchAnalysis({
           <>
             <p className="analysis-provenance">
               {source(data.source)} · {time(data.start)} — {time(data.end)} ·
-              Asia/Shanghai ·{' '}
-              {t(data.source === 'backend' ? '模拟数据' : '外部接口数据')}
+              Asia/Shanghai · {t('模拟数据')}
             </p>
             {stats.key !== key && (
               <p className="stale-result" role="status">
@@ -412,7 +325,7 @@ export function DispatchAnalysis({
           </>
         ) : (
           <p className="analysis-empty">
-            {t(loading ? '正在加载…' : '点击更新统计，读取所选接口。')}
+            {t(loading ? '正在加载…' : '点击更新统计，查看工单记录。')}
           </p>
         )}
       </section>
@@ -421,16 +334,29 @@ export function DispatchAnalysis({
           <h3>{t('智能建议')}</h3>
           <button
             className="primary"
-            disabled={!connected || generating || loading}
+            disabled={
+              !connected ||
+              generating ||
+              loading ||
+              !supportsAdvice(settings.adviceModel)
+            }
             onClick={() => void generate()}
           >
             <Sparkles size={17} />
-            {t(generating ? '正在分析…' : '生成分析')}
+            {t(
+              generating
+                ? '正在分析…'
+                : settings.adviceModel === 'none'
+                  ? '查看基础建议'
+                  : '生成智能建议',
+            )}
           </button>
         </div>
         <p className="analysis-provenance">
           {t(
-            '点击生成后调用所选接口；结果基于汇总事件，不用于自动指派人员或规划路线。',
+            settings.adviceModel === 'none'
+              ? '系统基础建议根据工单统计整理，不使用模型。'
+              : '模型建议基于汇总工单，仅作清运安排参考。',
           )}
         </p>
         {advice ? (
@@ -446,7 +372,7 @@ export function DispatchAnalysis({
                 {time(advice.data.start)} — {time(advice.data.end)}
               </span>
             </div>
-            {advice.key !== key && (
+            {advice.key !== adviceKey && (
               <p className="stale-result">
                 {t('显示上次成功结果，请更新以纳入当前范围与数据。')}
               </p>
@@ -470,7 +396,11 @@ export function DispatchAnalysis({
           </>
         ) : (
           <p className="analysis-empty">
-            {t('尚未生成建议，点击生成分析开始。')}
+            {t(
+              !supportsAdvice(settings.adviceModel)
+                ? '所选模型尚未接入，可先选择其他模型。'
+                : '暂无建议，点击上方按钮生成。',
+            )}
           </p>
         )}
       </section>

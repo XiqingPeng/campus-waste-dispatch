@@ -1,16 +1,40 @@
-export type ApiSettings = {
-  statsMode: 'backend' | 'custom';
-  statsUrl: string;
-  adviceMode: 'rules' | 'deepseek' | 'custom';
-  adviceUrl: string;
-};
+export const modelChoices = [
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'qwen', label: '通义千问（Qwen）' },
+  { value: 'openai', label: 'OpenAI' },
+] as const;
+export type ModelApi = 'none' | (typeof modelChoices)[number]['value'];
+export type ApiSettings = { statsModel: ModelApi; adviceModel: ModelApi };
 export const defaultSettings: ApiSettings = {
-  statsMode: 'backend',
-  statsUrl: '',
-  adviceMode: 'rules',
-  adviceUrl: '',
+  statsModel: 'none',
+  adviceModel: 'none',
 };
+// Reuse the storage key so legacy URLs are replaced by model selections.
 export const settingsKey = 'campus-loop.collection-apis.v1';
+function model(value: unknown): ModelApi {
+  return modelChoices.some((item) => item.value === value)
+    ? (value as ModelApi)
+    : 'none';
+}
+export function restoreSettings(value: string | null): ApiSettings {
+  try {
+    const raw = JSON.parse(value ?? '{}');
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+      return { ...defaultSettings };
+    return {
+      statsModel: model(raw.statsModel),
+      adviceModel: model(
+        raw.adviceModel ??
+          (raw.adviceMode === 'deepseek' ? 'deepseek' : 'none'),
+      ),
+    };
+  } catch {
+    return { ...defaultSettings };
+  }
+}
+export function supportsAdvice(model: ModelApi) {
+  return model === 'none' || model === 'deepseek';
+}
 export type ZoneStat = {
   name: string;
   bin_count: number | null;
@@ -38,37 +62,6 @@ export type Advice = {
   days: number;
   note?: string;
 };
-export function restoreSettings(value: string | null): ApiSettings {
-  try {
-    const raw = JSON.parse(value ?? '{}');
-    return {
-      statsMode: raw.statsMode === 'custom' ? 'custom' : 'backend',
-      statsUrl: typeof raw.statsUrl === 'string' ? raw.statsUrl : '',
-      adviceMode: ['rules', 'deepseek', 'custom'].includes(raw.adviceMode)
-        ? raw.adviceMode
-        : 'rules',
-      adviceUrl: typeof raw.adviceUrl === 'string' ? raw.adviceUrl : '',
-    };
-  } catch {
-    return { ...defaultSettings };
-  }
-}
-export function endpoint(value: string) {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error('请填写完整的 HTTP(S) 接口地址。');
-  }
-  if (
-    !['https:', 'http:'].includes(url.protocol) ||
-    url.username ||
-    url.password ||
-    url.hash
-  )
-    throw new Error('接口地址仅支持 HTTP(S)，不能包含账号、密码或片段。');
-  return url;
-}
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('接口返回格式不正确。');
@@ -121,38 +114,5 @@ export function normalizeStats(
     zones,
     ...range,
     rules: [],
-  };
-}
-export function normalizeAdvice(
-  raw: unknown,
-  stats: Statistics,
-  source: string,
-): Advice {
-  const data = object(raw);
-  if (typeof data.summary !== 'string' || !Array.isArray(data.suggestions))
-    throw new Error('建议接口需返回 summary 和 suggestions[]。');
-  const suggestions = data.suggestions.map((value) => {
-    const item = object(value);
-    if (
-      typeof item.action !== 'string' ||
-      !item.action.trim() ||
-      typeof item.basis !== 'string' ||
-      !item.basis.trim()
-    )
-      throw new Error('每条建议必须包含 action 和 basis。');
-    return {
-      action: item.action,
-      basis: item.basis,
-      limitation: typeof item.limitation === 'string' ? item.limitation : '',
-    };
-  });
-  return {
-    summary: data.summary,
-    suggestions,
-    source,
-    generatedAt: Date.now(),
-    start: stats.start,
-    end: stats.end,
-    days: stats.days,
   };
 }
