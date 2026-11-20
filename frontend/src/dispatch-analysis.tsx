@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BarChart3, Sparkles } from 'lucide-react';
 import { errorText, request } from './api';
 
@@ -30,20 +30,41 @@ const shanghaiTime = new Intl.DateTimeFormat('zh-CN', {
   hourCycle: 'h23',
 });
 
-export function DispatchAnalysis({ connected }: { connected: boolean }) {
+export function DispatchAnalysis({ connected, revision }: { connected: boolean; revision: string }) {
   const [days, setDays] = useState<Days>(7);
-  const [report, setReport] = useState<Report | null>(null);
+  const [preview, setPreview] = useState<Report | null>(null);
+  const [generated, setGenerated] = useState<{ key: string; report: Report } | null>(null);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState('');
-  const current = report?.days === days ? report : null;
+  const [error, setError] = useState<{ key: string; message: string } | null>(null);
+  const key = days + '/' + revision;
+  const current = generated?.key === key ? generated.report : preview?.days === days ? preview : null;
+  const currentError = error?.key === key ? error.message : '';
+
+  useEffect(() => {
+    if (!connected) return;
+    let active = true;
+    request<Report>('/api/analysis?days=' + days).then(
+      (report) => {
+        if (active) {
+          setPreview(report);
+          setError(null);
+        }
+      },
+      (cause: unknown) => {
+        if (active) setError({ key, message: errorText(cause) });
+      },
+    );
+    return () => { active = false; };
+  }, [connected, days, key]);
 
   async function generate() {
-    setError('');
+    setError(null);
     setPending(true);
     try {
-      setReport(await request<Report>('/api/analysis', { days }));
+      const report = await request<Report>('/api/analysis', { days });
+      setGenerated({ key, report });
     } catch (cause) {
-      setError(errorText(cause));
+      setError({ key, message: errorText(cause) });
     } finally {
       setPending(false);
     }
@@ -53,11 +74,11 @@ export function DispatchAnalysis({ connected }: { connected: boolean }) {
     <section className="panel dispatch-analysis" aria-labelledby="analysis-title" aria-busy={pending}>
       <div className="panel-heading analysis-heading">
         <span className="section-icon"><BarChart3 size={21} /></span>
-        <div><h2 id="analysis-title">清运分析</h2><p>按工单创建时间统计 · 演示数据</p></div>
+        <div><h2 id="analysis-title">清运分析</h2><p>按演示工单创建时间统计</p></div>
         <div className="analysis-controls">
           <div className="analysis-range" role="group" aria-label="分析时间范围">
             {([7, 28] as const).map((range) => (
-              <button type="button" key={range} aria-pressed={range === days} disabled={pending} onClick={() => { setDays(range); setError(''); }}>
+              <button type="button" key={range} aria-pressed={range === days} disabled={pending} onClick={() => setDays(range)}>
                 近 {range} 天
               </button>
             ))}
@@ -67,11 +88,11 @@ export function DispatchAnalysis({ connected }: { connected: boolean }) {
           </button>
         </div>
       </div>
-      {error && <p className="callout error" role="alert">{error}</p>}
+      {currentError && <p className="callout error" role="alert">{currentError}</p>}
       {current ? (
         <div className="analysis-result">
           <div className="analysis-context">
-            <span className={'analysis-source ' + current.source}>{current.source === 'deepseek' ? 'DeepSeek · ' + current.model : '本地规则'}</span>
+            <span className={'analysis-source ' + current.source}>{current.source === 'deepseek' ? 'DeepSeek（' + current.model + '）' : '本地规则'}</span>
             <span>{shanghaiTime.format(current.start_at)} 至 {shanghaiTime.format(current.generated_at)}（北京时间）</span>
           </div>
           <dl className="analysis-metrics">
@@ -96,7 +117,7 @@ export function DispatchAnalysis({ connected }: { connected: boolean }) {
           )}
           {current.note && <p className="analysis-note">{current.note}</p>}
         </div>
-      ) : <p className="analysis-empty">{pending ? '正在汇总工单与复核状态。' : '生成统计摘要和基于当前工单的清运建议。'}</p>}
+      ) : !currentError && <p className="analysis-empty">{connected ? '正在汇总工单与复核状态。' : '等待后端连接。'}</p>}
     </section>
   );
 }

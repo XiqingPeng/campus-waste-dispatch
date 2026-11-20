@@ -21,6 +21,7 @@ export function Cleaner({ state, connected, busy, onCollect }: {
   const next = active.find((ticket) => ticket.id === state?.recommendation);
   const nextBin = state?.bins.find((bin) => bin.id === next?.bin_id);
   const nextStation = state?.stations.find((station) => station.id === nextBin?.station_id);
+  const ticketRevision = state?.tickets.map((ticket) => ticket.id + ':' + ticket.status).join(',') ?? '';
 
   return (
     <div className="cleaner-dashboard">
@@ -71,8 +72,8 @@ export function Cleaner({ state, connected, busy, onCollect }: {
                     <li key={ticket.id} className="ticket-row" data-ticket-status={ticket.status} data-testid="ticket">
                       <span className={'ticket-icon ' + bin.category}><Icon size={22} /></span>
                       <div className="ticket-description">
-                        <strong>{station?.name} · {categories[bin.category].label}</strong>
-                        <span>{ticketLabels[ticket.status]} · 等待 {waitLabel(ticket.opened_at)}</span>
+                        <strong>{station?.name}（{categories[bin.category].label}）</strong>
+                        <span>{ticketLabels[ticket.status]}，已等待 {waitLabel(ticket.opened_at)}</span>
                       </div>
                       {ticket.id === next?.id ? (
                         <span className="status-chip priority">优先</span>
@@ -89,7 +90,7 @@ export function Cleaner({ state, connected, busy, onCollect }: {
           </section>
         </div>
       </div>
-      <DispatchAnalysis connected={connected} />
+      <DispatchAnalysis connected={connected} revision={ticketRevision} />
     </div>
   );
 }

@@ -52,7 +52,8 @@ git switch -c feat/short-description
 | `POST /api/sensor` | 提交 `event_id`、`bin_id`、`status`、`observed_at`。状态为 `available`、`full` 或 `unknown`，时间为 Unix 毫秒 |
 | `POST /api/tickets/{id}/collect` | 确认清运并等待新采样。再次报满进入待复核，新的未满采样关闭工单 |
 | `POST /api/recognize` | `mode=replay` 配合样例 ID。 `mode=live` 配合图片 data URL |
-| `POST /api/analysis` | JSON 为 `{"days": 7}` 或 `{"days": 28}`，返回统计、建议、证据、生成时间与来源 |
+| `GET /api/analysis?days=7` | 读取本地统计与规则建议。支持 7 天或 28 天，页面切换范围或工单变化后自动刷新 |
+| `POST /api/analysis` | 点击生成时提交 `{"days": 7}` 或 `{"days": 28}`。返回统计、建议、证据、生成时间与来源 |
 | `POST /api/demo/reset` | 清空当前演示实例的事件和工单，并将桶位设回可投放 |
 
 分析按工单创建时间筛选最近 7 或 28 天。已关闭工单的耗时从开单算到未满读数。旧记录若缺关闭时间，仍计入工单数量。规则分析始终基于 SQLite 记录。有密钥且时段内有数据时，点击生成会将汇总统计交给 DeepSeek 撰写建议。

@@ -235,7 +235,7 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
         )}
         {input.kind === 'camera' && <video ref={video} playsInline autoPlay muted aria-label="摄像头实时画面" />}
         <span className="media-tag">{sample ? <Film size={14} /> : <Video size={14} />}
-          {sample ? ('image' in sample ? '公开样例 · 演示回放' : '样例 · 演示回放') : 'JEV 实时推理'}
+          {sample ? ('image' in sample ? '公开样例回放' : '样例回放') : 'JEV 实时推理'}
         </span>
         {input.kind === 'camera' && (
           <button className="media-close" aria-label="关闭摄像头" onClick={() => chooseSample('bottle')}><X size={16} /></button>

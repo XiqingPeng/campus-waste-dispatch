@@ -70,7 +70,7 @@ async fn analysis_uses_verified_closure_and_selected_window() {
     )
     .await;
 
-    let week = send(&app, "POST", "/api/analysis", json!({ "days": 7 })).await;
+    let week = send(&app, "GET", "/api/analysis?days=7", Value::Null).await;
     let month = send(&app, "POST", "/api/analysis", json!({ "days": 28 })).await;
 
     assert_eq!(week["source"], "rules");

@@ -206,7 +206,13 @@ impl Analysis {
         Self(None)
     }
 
-    pub async fn report(&self, snapshot: Snapshot, days: u8, now: i64) -> Result<Report, ApiError> {
+    pub async fn report(
+        &self,
+        snapshot: Snapshot,
+        days: u8,
+        now: i64,
+        request_deepseek: bool,
+    ) -> Result<Report, ApiError> {
         if !matches!(days, 7 | 28) {
             return Err(ApiError::bad_request("仅支持近 7 天或近 28 天"));
         }
@@ -224,13 +230,17 @@ impl Analysis {
             suggestions,
         };
         if report.stats.opened == 0 {
-            report.note = Some("所选时段暂无工单。可以用设备模拟器上报满桶，再生成分析。");
+            report.note = Some("所选时段暂无工单。设备上报满桶后，统计会自动更新。");
             return Ok(report);
         }
         let Some(service) = &self.0 else {
             report.note = Some("DeepSeek 密钥尚未配置，建议由本地规则生成。");
             return Ok(report);
         };
+        if !request_deepseek {
+            report.note = Some("点击「生成分析」可使用 DeepSeek 生成建议。");
+            return Ok(report);
+        }
         if let Some((model, actions)) = service.actions(&report).await {
             for (suggestion, action) in report.suggestions.iter_mut().zip(actions) {
                 suggestion.action = action;
@@ -392,7 +402,13 @@ mod tests {
             model: "deepseek-flash".into(),
             endpoint,
         }));
-        let response = analysis.report(snapshot, 7, now).await.unwrap();
+        let preview = analysis
+            .report(store.snapshot().unwrap(), 7, now, false)
+            .await
+            .unwrap();
+        assert_eq!(preview.source, "rules");
+        assert!(preview.model.is_none());
+        let response = analysis.report(snapshot, 7, now, true).await.unwrap();
         assert_eq!(response.source, "deepseek");
         assert_eq!(response.suggestions[0].action, "优先巡查当前待清运站点。");
         assert!(response.suggestions[0].evidence.contains("1 张进行中工单"));

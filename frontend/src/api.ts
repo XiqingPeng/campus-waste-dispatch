@@ -25,6 +25,18 @@ export function errorText(error: unknown) {
   return error instanceof Error ? error.message : '服务暂时不可用，请重试。';
 }
 
+async function requestSnapshot(path: string, payload?: unknown): Promise<Snapshot> {
+  const snapshot = await request<Snapshot>(path, payload);
+  return {
+    ...snapshot,
+    // Preview instances using the previous backend still include a separator in station details.
+    stations: snapshot.stations.map((station) => ({
+      ...station,
+      detail: station.detail.replace(/\s*\u00b7\s*/g, ''),
+    })),
+  };
+}
+
 export function useCampusState() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [connected, setConnected] = useState(false);
@@ -40,7 +52,7 @@ export function useCampusState() {
       const version = epoch.current;
       if (!updating.current) {
         try {
-          const data = await request<Snapshot>('/api/state');
+          const data = await requestSnapshot('/api/state');
           if (alive && epoch.current === version) {
             setSnapshot(data);
             setConnected(true);
@@ -65,7 +77,7 @@ export function useCampusState() {
     epoch.current += 1;
     setBusy(true);
     try {
-      const data = await request<Snapshot>(path, payload);
+      const data = await requestSnapshot(path, payload);
       setSnapshot(data);
       setConnected(true);
       setLoadError('');

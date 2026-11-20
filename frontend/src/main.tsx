@@ -39,7 +39,7 @@ function Simulator({ dialog, state, update, disabled, onReset }: {
         observed_at: Math.max(Date.now(), (bin.observed_at ?? 0) + 1),
       });
       if (status === 'full') setLastFull(bin.id);
-      setLocalMessage({ text: '已上报 · ' + station.name + ' · ' + categories[category].label + ' · ' + binLabels[status], error: false });
+      setLocalMessage({ text: '已上报' + station.name + '的' + categories[category].label + '桶，状态为' + binLabels[status] + '。', error: false });
     } catch (cause) {
       setLocalMessage({ text: errorText(cause), error: true });
     }
@@ -181,7 +181,7 @@ function App() {
         setStationId('a');
         setNotice('');
       }} />
-      <footer className="footer">课程原型 <span aria-hidden>•</span> 宿舍站点、红外上报和指示灯为软件模拟</footer>
+      <footer className="footer">课程原型使用模拟站点、红外状态和指示灯。</footer>
     </>
   );
 }

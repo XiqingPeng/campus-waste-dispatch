@@ -95,7 +95,9 @@ fn api(state: AppState) -> Router {
         .route("/demo/reset", post(reset))
         .route(
             "/analysis",
-            post(analyze).layer(DefaultBodyLimit::max(1024)),
+            get(analysis_preview)
+                .post(analyze)
+                .layer(DefaultBodyLimit::max(1024)),
         )
         .route(
             "/recognize",
@@ -161,7 +163,19 @@ async fn analyze(
     let snapshot = state.store.snapshot()?;
     state
         .analysis
-        .report(snapshot, input.days, now_ms())
+        .report(snapshot, input.days, now_ms(), true)
+        .await
+        .map(Json)
+}
+
+async fn analysis_preview(
+    State(state): State<AppState>,
+    Query(input): Query<AnalysisRequest>,
+) -> Result<Json<Report>, ApiError> {
+    let snapshot = state.store.snapshot()?;
+    state
+        .analysis
+        .report(snapshot, input.days, now_ms(), false)
         .await
         .map(Json)
 }

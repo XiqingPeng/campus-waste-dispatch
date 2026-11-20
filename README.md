@@ -48,10 +48,10 @@ python3 scripts/verify_demo.py --base-url http://127.0.0.1:8080
 
 ## 清运分析
 
-在保洁工作台选择近 7 天或近 28 天，点击「生成分析」。统计包含时段内创建的满桶工单。平均关闭耗时仅计入有关闭时间的工单，旧数据库会自动增加该字段。分析结果包含建议和对应工单统计。
+保洁工作台自动显示近 7 天的统计和本地规则建议。切换到近 28 天或工单发生变化时，结果会自动更新。统计包含时段内创建的满桶工单，平均关闭耗时仅计入有关闭时间的工单。旧数据库会自动增加该字段。
 
 配置后端进程的 `DEEPSEEK_API_KEY` 可启用 DeepSeek 建议，默认模型为 `deepseek-flash`，可通过 `DEEPSEEK_MODEL` 设置。仅在点击生成且时段内有工单时发送汇总统计。服务未配置或返回错误时使用页面标注的本地规则。[DeepSeek 接口文档](https://api-docs.deepseek.com/guides/json_mode/)
 
 ## 素材
 
-空饮料瓶照片由 Ron Lach 拍摄，作为带来源标注的演示样例。[Pexels 原图](https://www.pexels.com/photo/close-up-shot-of-a-person-holding-a-plastic-bottle-9037601/) · [Pexels License](https://www.pexels.com/license/)
+空饮料瓶照片由 Ron Lach 拍摄，用于演示样例。[Pexels 原图](https://www.pexels.com/photo/close-up-shot-of-a-person-holding-a-plastic-bottle-9037601/)和[使用许可](https://www.pexels.com/license/)

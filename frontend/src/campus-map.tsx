@@ -37,7 +37,7 @@ export function CampusMap({ state, nextStation }: { state: Snapshot; nextStation
     <section className="panel station-map-panel" aria-labelledby="map-title">
       <div className="panel-heading campus-map-heading">
         <span className="section-icon"><MapPin size={21} /></span>
-        <div><h2 id="map-title">港科大（广州）校园点位图</h2><p>校园核心区 · {stations.length} 个模拟站点</p></div>
+        <div><h2 id="map-title">港科大（广州）校园点位图</h2><p>校园核心区的 {stations.length} 个模拟站点</p></div>
         <label className="map-filter"><input type="checkbox" checked={onlyAlerts} onChange={(event) => setOnlyAlerts(event.target.checked)} /> 只看异常</label>
       </div>
       <div className="station-map">
@@ -60,7 +60,7 @@ export function CampusMap({ state, nextStation }: { state: Snapshot; nextStation
             </button>
           );
         })}
-        <span className="map-caption">校园示意图 · 非测绘比例</span>
+        <span className="map-caption">校园示意图（非测绘比例）</span>
       </div>
       <div className="map-footer">
         <div className="map-legend">

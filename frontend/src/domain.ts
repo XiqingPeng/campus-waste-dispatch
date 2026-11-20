@@ -27,7 +27,7 @@ export const binLabels: Record<BinStatus, string> = { available: '可投放', fu
 export const ticketLabels: Record<TicketStatus, string> = {
   pending: '待清运',
   awaiting_verify: '待传感器确认',
-  needs_review: '仍报满 · 待复核',
+  needs_review: '仍报满，待复核',
   closed: '已关闭',
 };
 

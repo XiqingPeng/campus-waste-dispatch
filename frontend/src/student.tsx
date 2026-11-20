@@ -26,7 +26,7 @@ export function Student({ state, station, visible, connected }: {
             <span className="section-icon"><SignpostBig size={21} /></span>
             <div>
               <h2 id="guidance-title">投放指引</h2>
-              <p>{station ? station.name + ' · ' + station.detail : '等待站点连接'}</p>
+              <p>{station ? station.name + '（' + station.detail + '）' : '等待站点连接'}</p>
             </div>
             {result && <span className="source-label">{result.source === 'replay' ? '样例回放' : 'JEV 识别'}</span>}
           </div>
@@ -43,7 +43,7 @@ export function Student({ state, station, visible, connected }: {
                 <span className="decision-icon">
                   {local && TargetIcon ? <TargetIcon size={29} /> : alternate ? <ArrowUpRight size={29} /> : result.category ? <Clock3 size={27} /> : <CircleHelp size={27} />}
                 </span>
-                <span className="decision-overline">{result.item}{result.category ? ' · ' + categories[result.category].label : ''}</span>
+                <span className="decision-overline">{result.item}{result.category && '（' + categories[result.category].label + '）'}</span>
                 <h3>
                   {local && result.category ? '请投' + categories[result.category].label
                     : alternate ? '请前往 ' + alternate.name
