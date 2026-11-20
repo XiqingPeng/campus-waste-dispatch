@@ -445,8 +445,8 @@
     "zone": "体育区",
     "zone_key": "sports",
     "building": "STADIUM",
-    "map_x": 0.59093,
-    "map_y": 0.35111,
+    "map_x": 0.65859,
+    "map_y": 0.34752,
     "is_simulated": true,
     "source_id": "F-001"
   },
@@ -456,8 +456,8 @@
     "zone": "体育区",
     "zone_key": "sports",
     "building": "STADIUM",
-    "map_x": 0.59093,
-    "map_y": 0.39115,
+    "map_x": 0.63098,
+    "map_y": 0.39939,
     "is_simulated": true,
     "source_id": "F-002"
   },
@@ -467,8 +467,8 @@
     "zone": "体育区",
     "zone_key": "sports",
     "building": "GYM",
-    "map_x": 0.6457,
-    "map_y": 0.55937,
+    "map_x": 0.59733,
+    "map_y": 0.49959,
     "is_simulated": true,
     "source_id": "F-003"
   },
@@ -478,8 +478,8 @@
     "zone": "体育区",
     "zone_key": "sports",
     "building": "GYM",
-    "map_x": 0.80266,
-    "map_y": 0.58463,
+    "map_x": 0.72101,
+    "map_y": 0.63604,
     "is_simulated": true,
     "source_id": "F-004"
   },
