@@ -281,7 +281,12 @@ async fn unknown_bins_are_excluded_from_same_category_guidance() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|bin| bin["status"] == "available")
+            .all(|bin| bin["status"]
+                == if bin["id"].as_str().unwrap().starts_with("GZ-") {
+                    "unknown"
+                } else {
+                    "available"
+                })
     );
 }
 
@@ -345,4 +350,131 @@ async fn replay_is_explicit_and_live_never_returns_a_fixture() {
     .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert!(body.get("error").is_some());
+}
+
+#[tokio::test]
+async fn collection_catalog_and_analysis_are_separate_from_sorting() {
+    let app = test_app();
+    let initial = send(&app, "GET", "/api/state", Value::Null).await;
+    let points = initial["collection_points"].as_array().unwrap();
+    assert_eq!(points.len(), 50);
+    let ids: std::collections::HashSet<_> = points
+        .iter()
+        .map(|point| point["bin_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 50);
+    for number in 1..=50 {
+        assert!(ids.contains(format!("GZ-{number:03}").as_str()));
+    }
+    for point in points {
+        for field in ["map_x", "map_y"] {
+            assert!((0.0..=1.0).contains(&point[field].as_f64().unwrap()));
+        }
+    }
+    let bins = initial["bins"].as_array().unwrap();
+    assert_eq!(bins.len(), 62);
+    assert!(
+        bins.iter()
+            .filter(|bin| bin["id"].as_str().unwrap().starts_with("GZ-"))
+            .all(|bin| bin["status"] == "unknown" && bin["received_at"].is_null())
+    );
+    let now = now_ms();
+    send(
+        &app,
+        "POST",
+        "/api/sensor",
+        event("collection-first", "GZ-017", "full", now - 1_500_000),
+    )
+    .await;
+    send(
+        &app,
+        "POST",
+        "/api/sensor",
+        event("collection-repeat", "GZ-017", "full", now - 1_000_000),
+    )
+    .await;
+    let state = send(&app, "GET", "/api/state", Value::Null).await;
+    assert_eq!(state["tickets"].as_array().unwrap().len(), 1);
+    assert_eq!(state["tickets"][0]["opened_at"], now - 1_500_000);
+    let bin = state["bins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|bin| bin["id"] == "GZ-017")
+        .unwrap();
+    assert!(bin["received_at"].as_i64().unwrap() >= now);
+    let collection = send(
+        &app,
+        "GET",
+        "/api/analysis?days=7&scope=collection",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(collection["stats"]["opened"], 1);
+    assert_eq!(collection["stats"]["zones"].as_array().unwrap().len(), 7);
+    assert_eq!(
+        collection["stats"]["zones"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|z| z["bin_count"].as_u64().unwrap())
+            .sum::<u64>(),
+        50
+    );
+    assert_eq!(
+        collection["stats"]["hourly"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap())
+            .sum::<u64>(),
+        1
+    );
+    let sorting = send(&app, "GET", "/api/analysis?days=7", Value::Null).await;
+    assert_eq!(sorting["stats"]["opened"], 0);
+    let id = state["tickets"][0]["id"].as_i64().unwrap();
+    let waiting = send(
+        &app,
+        "POST",
+        &format!("/api/tickets/{id}/collect"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(waiting["tickets"][0]["status"], "awaiting_verify");
+    let done = send(
+        &app,
+        "POST",
+        "/api/sensor",
+        event("collection-cleared", "GZ-017", "available", now_ms() + 1),
+    )
+    .await;
+    assert_eq!(done["tickets"][0]["status"], "closed");
+}
+
+#[test]
+fn old_database_migrates_idempotently_without_resetting_existing_data() {
+    let path = std::env::temp_dir().join(format!(
+        "campus-migration-{}-{}.sqlite3",
+        std::process::id(),
+        now_ms()
+    ));
+    {
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.execute_batch("CREATE TABLE bins(id TEXT PRIMARY KEY, station_id TEXT NOT NULL, category TEXT NOT NULL, status TEXT NOT NULL, observed_at INTEGER);
+            INSERT INTO bins VALUES ('a-recycle','a','recycle','full',1234);").unwrap();
+    }
+    for _ in 0..2 {
+        let store = crate::db::Store::open(&path).unwrap();
+        let state = serde_json::to_value(store.snapshot().unwrap()).unwrap();
+        assert_eq!(state["bins"].as_array().unwrap().len(), 62);
+        let original = state["bins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|bin| bin["id"] == "a-recycle")
+            .unwrap();
+        assert_eq!(original["status"], "full");
+        assert_eq!(original["observed_at"], 1234);
+    }
+    std::fs::remove_file(path).unwrap();
 }

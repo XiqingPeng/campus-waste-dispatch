@@ -14,6 +14,16 @@ pub struct AnalysisRequest {
     days: u8,
     #[serde(default)]
     lang: Language,
+    #[serde(default)]
+    scope: Scope,
+}
+
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Scope {
+    #[default]
+    Sorting,
+    Collection,
 }
 
 #[derive(Clone, Copy, Default, Deserialize, Serialize)]
@@ -58,6 +68,8 @@ struct Stats {
     timed: usize,
     mean_minutes: Option<f64>,
     stations: Vec<StationStats>,
+    hourly: [usize; 24],
+    zones: Vec<ZoneStats>,
 }
 
 #[derive(Serialize)]
@@ -67,41 +79,95 @@ struct StationStats {
     active: usize,
 }
 
+#[derive(Default, Serialize)]
+struct ZoneStats {
+    name: String,
+    bin_count: usize,
+    events: usize,
+}
+
 impl Stats {
-    fn from_snapshot(snapshot: &Snapshot, start: i64, now: i64, lang: Language) -> Self {
+    fn from_snapshot(
+        snapshot: &Snapshot,
+        start: i64,
+        now: i64,
+        lang: Language,
+        scope: Scope,
+    ) -> Self {
         let mut stats = Self {
-            stations: snapshot
-                .stations
-                .iter()
-                .map(|station| StationStats {
-                    name: lang.choose(
-                        station.name.to_owned(),
-                        format!("Residence Station {}", station.id.to_ascii_uppercase()),
-                    ),
-                    opened: 0,
-                    active: 0,
-                })
-                .collect(),
+            stations: match scope {
+                Scope::Sorting => snapshot
+                    .stations
+                    .iter()
+                    .map(|station| StationStats {
+                        name: lang.choose(
+                            station.name.to_owned(),
+                            format!("Residence Station {}", station.id.to_ascii_uppercase()),
+                        ),
+                        opened: 0,
+                        active: 0,
+                    })
+                    .collect(),
+                Scope::Collection => snapshot
+                    .collection_points
+                    .iter()
+                    .map(|point| StationStats {
+                        name: point.name.clone(),
+                        opened: 0,
+                        active: 0,
+                    })
+                    .collect(),
+            },
             ..Self::default()
         };
+        if matches!(scope, Scope::Collection) {
+            for point in &snapshot.collection_points {
+                if let Some(zone) = stats.zones.iter_mut().find(|zone| zone.name == point.zone) {
+                    zone.bin_count += 1;
+                } else {
+                    stats.zones.push(ZoneStats {
+                        name: point.zone.clone(),
+                        bin_count: 1,
+                        events: 0,
+                    });
+                }
+            }
+        }
         let mut elapsed_ms = 0;
         for ticket in snapshot
             .tickets
             .iter()
             .filter(|ticket| (start..=now).contains(&ticket.opened_at))
+            .filter(|ticket| ticket.bin_id.starts_with("GZ-") == matches!(scope, Scope::Collection))
         {
             let is_closed = ticket.status == "closed";
             stats.opened += 1;
-            let station_index = snapshot
-                .bins
+            stats.hourly[((ticket.opened_at / 3_600_000 + 8).rem_euclid(24)) as usize] += 1;
+            let station_index = match scope {
+                Scope::Sorting => snapshot
+                    .bins
+                    .iter()
+                    .find(|bin| bin.id == ticket.bin_id)
+                    .and_then(|bin| {
+                        snapshot
+                            .stations
+                            .iter()
+                            .position(|station| station.id == bin.station_id)
+                    }),
+                Scope::Collection => snapshot
+                    .collection_points
+                    .iter()
+                    .position(|point| point.bin_id == ticket.bin_id),
+            };
+            if let Some(point) = snapshot
+                .collection_points
                 .iter()
-                .find(|bin| bin.id == ticket.bin_id)
-                .and_then(|bin| {
-                    snapshot
-                        .stations
-                        .iter()
-                        .position(|station| station.id == bin.station_id)
-                });
+                .find(|point| point.bin_id == ticket.bin_id)
+            {
+                if let Some(zone) = stats.zones.iter_mut().find(|zone| zone.name == point.zone) {
+                    zone.events += 1;
+                }
+            }
             if let Some(index) = station_index {
                 stats.stations[index].opened += 1;
                 stats.stations[index].active += usize::from(!is_closed);
@@ -176,7 +242,7 @@ impl Stats {
                 key: "active",
                 action: lang
                     .choose(
-                        "查看推荐清运站，并跟踪进行中工单是否及时关闭。",
+                        "查看待清运点位，并跟踪进行中工单是否及时关闭。",
                         "Review the recommended stop and track open tickets until they are closed.",
                     )
                     .into(),
@@ -213,11 +279,11 @@ impl Stats {
                 ),
                 evidence: lang.choose(
                     format!(
-                        "{}在所选时段创建 {} 张工单，为三个示范站中最多。",
+                        "{}在所选时段创建 {} 张工单，为当前监测点位中最多。",
                         station.name, station.opened
                     ),
                     format!(
-                        "{} had the most tickets of the three demo stations in this period: {}.",
+                        "{} had the most tickets of the monitored locations in this period: {}.",
                         station.name, station.opened
                     ),
                 ),
@@ -288,12 +354,12 @@ impl Analysis {
         now: i64,
         request_deepseek: bool,
     ) -> Result<Report, ApiError> {
-        let AnalysisRequest { days, lang } = request;
+        let AnalysisRequest { days, lang, scope } = request;
         if !matches!(days, 7 | 28) {
             return Err(ApiError::bad_request("仅支持近 7 天或近 28 天"));
         }
         let start = now - i64::from(days) * DAY_MS;
-        let stats = Stats::from_snapshot(&snapshot, start, now, lang);
+        let stats = Stats::from_snapshot(&snapshot, start, now, lang, scope);
         let suggestions = stats.suggestions(lang);
         let mut report = Report {
             days,
@@ -508,6 +574,7 @@ mod tests {
                 AnalysisRequest {
                     days: 7,
                     lang: Language::English,
+                    scope: Scope::Sorting,
                 },
                 now,
                 false,
@@ -522,6 +589,7 @@ mod tests {
                 AnalysisRequest {
                     days: 7,
                     lang: Language::English,
+                    scope: Scope::Sorting,
                 },
                 now,
                 true,
