@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { errorText, request } from './api';
 import { categories, sampleKeys, samples } from './domain';
 import type { Result, Sample } from './domain';
+import { useLocale } from './locale';
 
 type Input =
   | { kind: 'sample'; sample: Sample }
@@ -36,6 +37,7 @@ async function readImage(file: File) {
 }
 
 export function Capture({ onResult, visible }: { onResult: (result: Result | null) => void; visible: boolean }) {
+  const { t, text } = useLocale();
   const [input, setInput] = useState<Input>({ kind: 'sample', sample: 'bottle' });
   const [pending, setPending] = useState(false);
   const [openingCamera, setOpeningCamera] = useState(false);
@@ -182,26 +184,26 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
       <div className="panel-heading">
         <span className="section-icon"><ScanLine size={21} /></span>
         <div>
-          <h2 id="capture-title">物品识别</h2>
-          <p>每次拍摄或上传一件物品</p>
+          <h2 id="capture-title">{t('物品识别')}</h2>
+          <p>{t('每次拍摄或上传一件物品')}</p>
         </div>
       </div>
 
-      <div className="media-tabs" aria-label="图像来源">
+      <div className="media-tabs" aria-label={t('图像来源')}>
         <button className={sample ? 'active' : ''} aria-pressed={Boolean(sample)} onClick={() => chooseSample('bottle')}>
-          <ImageIcon size={17} /> 样例回放
+          <ImageIcon size={17} /> {t('样例回放')}
         </button>
         <button className={uploaded ? 'active' : ''} aria-pressed={uploaded} onClick={() => fileInput.current?.click()}>
-          <Upload size={17} /> 上传文件
+          <Upload size={17} /> {t('上传文件')}
         </button>
         <button className={input.kind === 'camera' ? 'active' : ''} aria-pressed={input.kind === 'camera'} onClick={() => void openCamera()} disabled={openingCamera}>
-          <Camera size={17} /> {openingCamera ? '正在打开' : '摄像头'}
+          <Camera size={17} /> {t(openingCamera ? '正在打开' : '摄像头')}
         </button>
         <input
           ref={fileInput}
           type="file"
           accept="image/*,video/*"
-          aria-label="选择图片或视频"
+          aria-label={t('选择图片或视频')}
           hidden
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
@@ -214,13 +216,13 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
       <div className={'media-window' + (sample ? ' media-demo' : '')}>
         {sample && (
           'image' in sample
-            ? <img className="sample-photo" src={sample.image} alt="投放物品公开样例" />
+            ? <img className="sample-photo" src={sample.image} alt={t('投放物品公开样例')} />
             : <div className="sample-placeholder">
                 {SampleIcon && <SampleIcon size={51} strokeWidth={1.3} aria-hidden />}
-                <span>{sample.label}</span>
+                <span>{t(sample.label)}</span>
               </div>
         )}
-        {input.kind === 'image' && <img src={input.data} alt="当前待识别的物品" />}
+        {input.kind === 'image' && <img src={input.data} alt={t('当前待识别的物品')} />}
         {input.kind === 'video' && (
           <video
             ref={video}
@@ -233,34 +235,34 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
             onError={() => setError('浏览器无法播放该视频，请上传 MP4 文件。')}
           />
         )}
-        {input.kind === 'camera' && <video ref={video} playsInline autoPlay muted aria-label="摄像头实时画面" />}
+        {input.kind === 'camera' && <video ref={video} playsInline autoPlay muted aria-label={t('摄像头实时画面')} />}
         <span className="media-tag">{sample ? <Film size={14} /> : <Video size={14} />}
-          {sample ? ('image' in sample ? '公开样例回放' : '样例回放') : 'JEV 实时推理'}
+          {t(sample ? ('image' in sample ? '公开样例回放' : '样例回放') : 'JEV 实时推理')}
         </span>
         {input.kind === 'camera' && (
-          <button className="media-close" aria-label="关闭摄像头" onClick={() => chooseSample('bottle')}><X size={16} /></button>
+          <button className="media-close" aria-label={t('关闭摄像头')} onClick={() => chooseSample('bottle')}><X size={16} /></button>
         )}
         {(input.kind === 'sample' || input.kind === 'camera') && <div className="viewfinder" aria-hidden><i /><i /><i /><i /></div>}
-        {input.kind !== 'video' && <span className="media-caption">{currentLabel}</span>}
+        {input.kind !== 'video' && <span className="media-caption">{text(currentLabel)}</span>}
       </div>
 
       {sample ? (
-        <div className="sample-row" aria-label="选择演示样例">
+        <div className="sample-row" aria-label={t('选择演示样例')}>
           {sampleKeys.map((key) => (
             <button key={key} aria-pressed={input.kind === 'sample' && input.sample === key} onClick={() => chooseSample(key)}>
-              {samples[key].label}
+              {t(samples[key].label)}
             </button>
           ))}
         </div>
       ) : (
         <p className="media-note">
-          {input.kind === 'video' ? '把进度条拉到物品清楚的画面，再点击截帧识别。' : '点击识别后，单张图像将发送至 JEV 接口。'}
+          {t(input.kind === 'video' ? '把进度条拉到物品清楚的画面，再点击截帧识别。' : '点击识别后，单张图像将发送至 JEV 接口。')}
         </p>
       )}
 
-      {error && <div className="callout error" role="status"><CircleAlert size={17} /><span>{error}</span></div>}
+      {error && <div className="callout error" role="status"><CircleAlert size={17} /><span>{text(error)}</span></div>}
       <button className="primary recognize" onClick={() => void recognize()} disabled={pending || openingCamera}>
-        <ScanLine size={20} /> {pending ? '处理中…' : sample ? '识别样例' : input.kind === 'video' || input.kind === 'camera' ? '截帧识别' : '识别图片'}
+        <ScanLine size={20} /> {t(pending ? '处理中…' : sample ? '识别样例' : input.kind === 'video' || input.kind === 'camera' ? '截帧识别' : '识别图片')}
       </button>
     </section>
   );

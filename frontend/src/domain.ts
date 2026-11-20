@@ -1,4 +1,5 @@
 import { Battery, Coffee, Recycle, Trash2 } from 'lucide-react';
+import type { Message, Translator } from './locale';
 
 export const categories = {
   recycle: { label: '可回收物', icon: Recycle, examples: '空瓶、纸板' },
@@ -23,8 +24,8 @@ export const sampleKeys = Object.keys(samples) as Sample[];
 export type BinStatus = 'available' | 'full' | 'unknown';
 export type TicketStatus = 'pending' | 'awaiting_verify' | 'needs_review' | 'closed';
 
-export const binLabels: Record<BinStatus, string> = { available: '可投放', full: '已满', unknown: '未知' };
-export const ticketLabels: Record<TicketStatus, string> = {
+export const binLabels: Record<BinStatus, Message> = { available: '可投放', full: '已满', unknown: '未知' };
+export const ticketLabels: Record<TicketStatus, Message> = {
   pending: '待清运',
   awaiting_verify: '待传感器确认',
   needs_review: '仍报满，待复核',
@@ -49,9 +50,9 @@ export function availability(state: Snapshot, station: Station, category: Catego
   return { local, alternate: candidates[0] ?? null };
 }
 
-export function waitLabel(openedAt: number) {
+export function waitLabel(openedAt: number, t: Translator) {
   const minutes = Math.max(0, Math.floor((Date.now() - openedAt) / 60_000));
-  if (minutes === 0) return '不足 1 分钟';
-  if (minutes < 60) return minutes + ' 分钟';
-  return Math.floor(minutes / 60) + ' 小时 ' + minutes % 60 + ' 分钟';
+  if (minutes === 0) return t('不足 1 分钟');
+  if (minutes < 60) return t('{minutes} 分钟', { minutes });
+  return t('{hours} 小时 {minutes} 分钟', { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
 }

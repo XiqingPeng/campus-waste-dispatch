@@ -1,3 +1,5 @@
+import type { Translator } from './locale';
+
 type Point = [number, number];
 
 export const officialMap = 'https://studyathkustgz.hkust-gz.edu.cn/detail-819';
@@ -108,7 +110,7 @@ function oval(ctx: CanvasRenderingContext2D, x: number, y: number, width: number
   ctx.fill();
 }
 
-export function drawCampus(ctx: CanvasRenderingContext2D) {
+export function drawCampus(ctx: CanvasRenderingContext2D, t: Translator) {
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   grounds.forEach((path, index) => area(ctx, path, index === 0 ? '#ecf1e4' : '#e0ead5'));
@@ -131,30 +133,30 @@ export function drawCampus(ctx: CanvasRenderingContext2D) {
 
   westLabs.forEach(([x, y], i) => building(ctx, 'W' + (4 - i), [x, y], 128, 32, i === 0 ? 12 : -7, 'academic'));
   eastLabs.forEach(([x, y], i) => building(ctx, 'E' + (4 - i), [x, y], 130, 32, i < 2 ? -10 : 9, 'academic'));
-  building(ctx, '图书馆', [240, 69], 92, 33, 0, 'civic');
+  building(ctx, t('图书馆'), [240, 69], 92, 33, 0, 'civic');
   oval(ctx, 270, 155, 23, 29, 18, '#eee6d1');
-  label(ctx, '食堂', 270, 156, 15);
-  label(ctx, '演讲厅', 242, 198, 14);
+  label(ctx, t('食堂'), 270, 156, 15);
+  label(ctx, t('演讲厅'), 242, 198, 14);
 
   area(ctx, 'M172 396Q190 331 236 330Q285 330 311 400L295 409Q272 350 236 350Q200 350 189 403Z', '#e5ebe7', '#b0beb5');
   oval(ctx, 239, 406, 27, 27, 0, '#d5e9dc');
   oval(ctx, 239, 406, 19, 19, 0, '#cce5eb');
   oval(ctx, 239, 406, 9, 9, 0, '#e7d9b5');
-  label(ctx, '行政大楼', 237, 362, 16);
-  building(ctx, '活动中心', [368, 372], 110, 34, 15, 'civic');
+  label(ctx, t('行政大楼'), 237, 362, 16);
+  building(ctx, t('活动中心'), [368, 372], 110, 34, 15, 'civic');
 
   oval(ctx, 754, 99, 100, 64, 43, '#d4a98a');
   oval(ctx, 754, 99, 95, 59, 43, '#e9c2a3');
   oval(ctx, 754, 99, 85, 49, 43, '#a8c9a0');
   oval(ctx, 719, 244, 79, 47, -24, '#a8bea3');
   oval(ctx, 719, 244, 73, 41, -24, '#e1eadc');
-  label(ctx, '体育场', 754, 99, 19, '#344b3e');
-  label(ctx, '体育馆', 719, 243, 18, '#344b3e');
-  label(ctx, '体育区', 867, 120, 15, '#587356');
-  label(ctx, '教学科研区', 114, 41, 16, '#526a90');
-  label(ctx, '南区宿舍', 685, 312, 17, '#895d62');
+  label(ctx, t('体育场'), 754, 99, 19, '#344b3e');
+  label(ctx, t('体育馆'), 719, 243, 18, '#344b3e');
+  label(ctx, t('体育区'), 867, 120, 15, '#587356');
+  label(ctx, t('教学科研区'), 114, 41, 16, '#526a90');
+  label(ctx, t('南区宿舍'), 685, 312, 17, '#895d62');
 
   residences.forEach(({ label: name, x, y, angle }) => building(ctx, name, [x, y], 57, 25, angle, 'residential'));
-  label(ctx, '主入口', 238, 519, 17);
-  label(ctx, '笃学路', 615, 551, 15, '#5b6f70');
+  label(ctx, t('主入口'), 238, 519, 17);
+  label(ctx, t('笃学路'), 615, 551, 15, '#5b6f70');
 }

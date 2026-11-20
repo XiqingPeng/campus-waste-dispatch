@@ -14,7 +14,7 @@ export async function request<T>(path: string, payload?: unknown): Promise<T> {
 
   if (!response.ok) {
     const info = await response.json().catch(() => ({})) as { error?: string };
-    throw new Error(info.error || '请求失败（' + response.status + '）');
+    throw new Error(info.error || '服务暂时不可用，请重试。');
   }
   return response.json() as Promise<T>;
 }

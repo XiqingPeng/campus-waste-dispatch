@@ -11,12 +11,33 @@ const MINUTE_MS: i64 = 60_000;
 
 #[derive(Deserialize)]
 pub struct AnalysisRequest {
-    pub days: u8,
+    days: u8,
+    #[serde(default)]
+    lang: Language,
+}
+
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+enum Language {
+    #[default]
+    #[serde(rename = "zh-CN")]
+    Chinese,
+    #[serde(rename = "en")]
+    English,
+}
+
+impl Language {
+    fn choose<T>(self, chinese: T, english: T) -> T {
+        match self {
+            Self::Chinese => chinese,
+            Self::English => english,
+        }
+    }
 }
 
 #[derive(Serialize)]
 pub struct Report {
     days: u8,
+    lang: Language,
     start_at: i64,
     generated_at: i64,
     stats: Stats,
@@ -41,19 +62,22 @@ struct Stats {
 
 #[derive(Serialize)]
 struct StationStats {
-    name: &'static str,
+    name: String,
     opened: usize,
     active: usize,
 }
 
 impl Stats {
-    fn from_snapshot(snapshot: &Snapshot, start: i64, now: i64) -> Self {
+    fn from_snapshot(snapshot: &Snapshot, start: i64, now: i64, lang: Language) -> Self {
         let mut stats = Self {
             stations: snapshot
                 .stations
                 .iter()
                 .map(|station| StationStats {
-                    name: station.name,
+                    name: lang.choose(
+                        station.name.to_owned(),
+                        format!("Residence Station {}", station.id.to_ascii_uppercase()),
+                    ),
                     opened: 0,
                     active: 0,
                 })
@@ -103,35 +127,68 @@ impl Stats {
         stats
     }
 
-    fn suggestions(&self) -> Vec<Suggestion> {
+    fn suggestions(&self, lang: Language) -> Vec<Suggestion> {
         let mut suggestions = Vec::new();
         if self.long_wait > 0 {
             suggestions.push(Suggestion {
                 key: "long_wait",
-                action: "打开清运工单，优先检查等待最久的站点。".into(),
-                evidence: format!(
-                    "{} 张进行中工单已等待至少 {LONG_WAIT_MINUTES} 分钟。",
-                    self.long_wait
+                action: lang
+                    .choose(
+                        "打开清运工单，优先检查等待最久的站点。",
+                        "Review collection tickets and prioritize the longest waits.",
+                    )
+                    .into(),
+                evidence: lang.choose(
+                    format!(
+                        "{} 张进行中工单已等待至少 {LONG_WAIT_MINUTES} 分钟。",
+                        self.long_wait
+                    ),
+                    format!(
+                        "Open tickets waiting at least {LONG_WAIT_MINUTES} minutes: {}.",
+                        self.long_wait
+                    ),
                 ),
             });
         }
         if self.needs_review + self.verify > 0 {
             suggestions.push(Suggestion {
                 key: "verify",
-                action: "复核已登记清运的桶位，结合设备的新读数确认清运结果。".into(),
-                evidence: format!(
-                    "{} 张工单等待设备确认，{} 张工单在确认后仍报满。",
-                    self.verify, self.needs_review
+                action: lang
+                    .choose(
+                        "复核已登记清运的桶位，结合设备的新读数确认清运结果。",
+                        "Check the reported collections against the latest bin readings.",
+                    )
+                    .into(),
+                evidence: lang.choose(
+                    format!(
+                        "{} 张工单等待设备确认，{} 张工单在确认后仍报满。",
+                        self.verify, self.needs_review
+                    ),
+                    format!(
+                        "Awaiting a sensor check: {}. Still full after collection: {}.",
+                        self.verify, self.needs_review
+                    ),
                 ),
             });
         }
         if self.active > 0 && self.long_wait == 0 {
             suggestions.push(Suggestion {
                 key: "active",
-                action: "查看推荐清运站，并跟踪进行中工单是否及时关闭。".into(),
-                evidence: format!(
-                    "所选时段有 {} 张进行中工单，尚未到达 {LONG_WAIT_MINUTES} 分钟阈值。",
-                    self.active
+                action: lang
+                    .choose(
+                        "查看推荐清运站，并跟踪进行中工单是否及时关闭。",
+                        "Review the recommended stop and track open tickets until they are closed.",
+                    )
+                    .into(),
+                evidence: lang.choose(
+                    format!(
+                        "所选时段有 {} 张进行中工单，尚未到达 {LONG_WAIT_MINUTES} 分钟阈值。",
+                        self.active
+                    ),
+                    format!(
+                        "Open tickets under the {LONG_WAIT_MINUTES}-minute threshold: {}.",
+                        self.active
+                    ),
                 ),
             });
         }
@@ -144,21 +201,39 @@ impl Stats {
         }) {
             suggestions.push(Suggestion {
                 key: "station",
-                action: format!(
-                    "下次巡查时观察{}的满桶频率，收集更多事件后再调整巡检频率。",
-                    station.name
+                action: lang.choose(
+                    format!(
+                        "下次巡查时观察{}的满桶频率，收集更多事件后再调整巡检频率。",
+                        station.name
+                    ),
+                    format!(
+                        "Check how often bins fill at {} before changing the collection schedule.",
+                        station.name
+                    ),
                 ),
-                evidence: format!(
-                    "{}在所选时段创建 {} 张工单，为三个示范站中最多。",
-                    station.name, station.opened
+                evidence: lang.choose(
+                    format!(
+                        "{}在所选时段创建 {} 张工单，为三个示范站中最多。",
+                        station.name, station.opened
+                    ),
+                    format!(
+                        "{} had the most tickets of the three demo stations in this period: {}.",
+                        station.name, station.opened
+                    ),
                 ),
             });
         }
         if suggestions.is_empty() && self.closed > 0 {
             suggestions.push(Suggestion {
                 key: "closed",
-                action: "保留已关闭工单，累积更多事件后再比较各站点的清运时长。".into(),
-                evidence: format!("所选时段创建的 {} 张工单均已关闭。", self.closed),
+                action: lang.choose(
+                    "保留已关闭工单，累积更多事件后再比较各站点的清运时长。",
+                    "Keep the closed tickets and collect more events before comparing station response times.",
+                ).into(),
+                evidence: lang.choose(
+                    format!("所选时段创建的 {} 张工单均已关闭。", self.closed),
+                    format!("All tickets opened in this period are closed: {}.", self.closed),
+                ),
             });
         }
         suggestions
@@ -209,18 +284,20 @@ impl Analysis {
     pub async fn report(
         &self,
         snapshot: Snapshot,
-        days: u8,
+        request: AnalysisRequest,
         now: i64,
         request_deepseek: bool,
     ) -> Result<Report, ApiError> {
+        let AnalysisRequest { days, lang } = request;
         if !matches!(days, 7 | 28) {
             return Err(ApiError::bad_request("仅支持近 7 天或近 28 天"));
         }
         let start = now - i64::from(days) * DAY_MS;
-        let stats = Stats::from_snapshot(&snapshot, start, now);
-        let suggestions = stats.suggestions();
+        let stats = Stats::from_snapshot(&snapshot, start, now, lang);
+        let suggestions = stats.suggestions(lang);
         let mut report = Report {
             days,
+            lang,
             start_at: start,
             generated_at: now,
             stats,
@@ -230,15 +307,24 @@ impl Analysis {
             suggestions,
         };
         if report.stats.opened == 0 {
-            report.note = Some("所选时段暂无工单。设备上报满桶后，统计会自动更新。");
+            report.note = Some(lang.choose(
+                "所选时段暂无工单。设备上报满桶后，统计会自动更新。",
+                "No tickets in this period. The report updates when a sensor reports a full bin.",
+            ));
             return Ok(report);
         }
         let Some(service) = &self.0 else {
-            report.note = Some("DeepSeek 密钥尚未配置，建议由本地规则生成。");
+            report.note = Some(lang.choose(
+                "DeepSeek 密钥尚未配置，建议由本地规则生成。",
+                "Configure a DeepSeek API key to generate model recommendations.",
+            ));
             return Ok(report);
         };
         if !request_deepseek {
-            report.note = Some("点击「生成分析」可使用 DeepSeek 生成建议。");
+            report.note = Some(lang.choose(
+                "点击「生成分析」可使用 DeepSeek 生成建议。",
+                "Select Generate Analysis to request DeepSeek recommendations.",
+            ));
             return Ok(report);
         }
         if let Some((model, actions)) = service.actions(&report).await {
@@ -248,7 +334,10 @@ impl Analysis {
             report.source = "deepseek";
             report.model = Some(model);
         } else {
-            report.note = Some("DeepSeek 暂不可用或未返回有效分析，已生成本地规则建议。");
+            report.note = Some(lang.choose(
+                "DeepSeek 暂不可用或未返回有效分析，已生成本地规则建议。",
+                "DeepSeek is unavailable or returned an invalid report. Local recommendations are shown.",
+            ));
         }
         Ok(report)
     }
@@ -290,12 +379,17 @@ impl DeepSeek {
             .map(|item| json!({ "key": item.key, "evidence": item.evidence }))
             .collect();
         let input = json!({ "days": report.days, "stats": report.stats, "evidence": evidence });
+        let response_language = report.lang.choose("Simplified Chinese", "English");
+        let example_key = report.suggestions.first()?.key;
+        let instructions = format!(
+            "Use the simulated campus waste ticket aggregates and evidence to write one actionable recommendation in {response_language} for each evidence key. Copy every evidence key exactly once. Keep actions under 80 Chinese characters or 170 English characters. Do not invent numbers, peak periods, real occupancy, or equipment fault causes. Return JSON in this shape: {{\"suggestions\":[{{\"key\":\"{example_key}\",\"action\":\"<recommendation>\"}}]}}."
+        );
         let payload = json!({
             "model": self.model,
             "messages": [
                 {
                     "role": "system",
-                    "content": "你是校园垃圾清运课程演示的分析助手。输入是模拟工单的汇总和证据。为每个提供的 key 写一条有依据、可操作的中文建议（80字内）。保留原 key，每个 key 恰好出现一次。只写建议动作，界面会单独展示证据。不要猜测高峰、真实地点人流或设备故障原因，不要编造数字，不执行任何操作。用 json 格式输出，例如 {\"suggestions\":[{\"key\":\"closed\",\"action\":\"保留已关闭工单，积累更多事件再调整巡查频率。\"}]}。",
+                    "content": instructions,
                 },
                 { "role": "user", "content": input.to_string() }
             ],
@@ -311,8 +405,10 @@ impl DeepSeek {
             .json(&payload)
             .send()
             .await
+            .inspect_err(|error| eprintln!("DeepSeek connection failed: {error:#}"))
             .ok()?
             .error_for_status()
+            .inspect_err(|error| eprintln!("DeepSeek returned an HTTP error: {error}"))
             .ok()?
             .json::<Completion>()
             .await
@@ -336,7 +432,8 @@ impl DeepSeek {
                     .find(|item| item.key == suggestion.key)?
                     .action
                     .trim();
-                (!action.is_empty() && action.chars().count() <= 90).then(|| action.to_owned())
+                let limit = report.lang.choose(90, 190);
+                (!action.is_empty() && action.chars().count() <= limit).then(|| action.to_owned())
             })
             .collect::<Option<Vec<_>>>()?;
         Some((completion.model, actions))
@@ -360,6 +457,9 @@ mod tests {
             |headers: HeaderMap, Json(payload): Json<Value>| async move {
                 assert_eq!(headers["authorization"], "Bearer test-key");
                 assert_eq!(payload["response_format"]["type"], "json_object");
+                let instructions = payload["messages"][0]["content"].as_str().unwrap();
+                assert!(instructions.contains("recommendation in English"));
+                assert!(instructions.contains(r#""key":"active""#));
                 let message = payload["messages"][1]["content"].as_str().unwrap();
                 let aggregates: Value = serde_json::from_str(message).unwrap();
                 assert_eq!(aggregates["stats"]["opened"], 1);
@@ -371,7 +471,7 @@ mod tests {
                         "finish_reason": "stop",
                         "message": {
                             "content": json!({
-                                "suggestions": [{"key": "active", "action": "优先巡查当前待清运站点。"}]
+                                "suggestions": [{"key": "active", "action": "Check the open collection ticket first."}]
                             }).to_string()
                         }
                     }]
@@ -403,15 +503,41 @@ mod tests {
             endpoint,
         }));
         let preview = analysis
-            .report(store.snapshot().unwrap(), 7, now, false)
+            .report(
+                store.snapshot().unwrap(),
+                AnalysisRequest {
+                    days: 7,
+                    lang: Language::English,
+                },
+                now,
+                false,
+            )
             .await
             .unwrap();
         assert_eq!(preview.source, "rules");
         assert!(preview.model.is_none());
-        let response = analysis.report(snapshot, 7, now, true).await.unwrap();
+        let response = analysis
+            .report(
+                snapshot,
+                AnalysisRequest {
+                    days: 7,
+                    lang: Language::English,
+                },
+                now,
+                true,
+            )
+            .await
+            .unwrap();
         assert_eq!(response.source, "deepseek");
-        assert_eq!(response.suggestions[0].action, "优先巡查当前待清运站点。");
-        assert!(response.suggestions[0].evidence.contains("1 张进行中工单"));
+        assert_eq!(
+            response.suggestions[0].action,
+            "Check the open collection ticket first."
+        );
+        assert!(
+            response.suggestions[0]
+                .evidence
+                .contains("20-minute threshold: 1")
+        );
         task.abort();
     }
 }

@@ -3,6 +3,7 @@ import { ArrowUpRight, MapPin } from 'lucide-react';
 import { drawCampus, mapHeight, mapWidth, officialMap, stationLocations } from './campus-drawing';
 import { binLabels, categories, categoryOrder, ticketLabels } from './domain';
 import type { Snapshot, Station } from './domain';
+import { useLocale } from './locale';
 
 const stationStatus = {
   available: '可投放',
@@ -11,6 +12,7 @@ const stationStatus = {
 } as const;
 
 export function CampusMap({ state, nextStation }: { state: Snapshot; nextStation?: Station }) {
+  const { t, text } = useLocale();
   const [onlyAlerts, setOnlyAlerts] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -19,8 +21,8 @@ export function CampusMap({ state, nextStation }: { state: Snapshot; nextStation
     const context = canvas.current?.getContext('2d');
     if (!context) return;
     context.setTransform(2, 0, 0, 2, 0, 0);
-    drawCampus(context);
-  }, []);
+    drawCampus(context, t);
+  }, [t]);
 
   const stations = state.stations.map((station) => {
     const bins = state.bins.filter((bin) => bin.station_id === station.id);
@@ -37,8 +39,8 @@ export function CampusMap({ state, nextStation }: { state: Snapshot; nextStation
     <section className="panel station-map-panel" aria-labelledby="map-title">
       <div className="panel-heading campus-map-heading">
         <span className="section-icon"><MapPin size={21} /></span>
-        <div><h2 id="map-title">港科大（广州）校园点位图</h2><p>校园核心区的 {stations.length} 个模拟站点</p></div>
-        <label className="map-filter"><input type="checkbox" checked={onlyAlerts} onChange={(event) => setOnlyAlerts(event.target.checked)} /> 只看异常</label>
+        <div><h2 id="map-title">{t('港科大（广州）校园点位图')}</h2><p>{t('校园核心区的 {count} 个模拟站点', { count: stations.length })}</p></div>
+        <label className="map-filter"><input type="checkbox" checked={onlyAlerts} onChange={(event) => setOnlyAlerts(event.target.checked)} /> {t('只看异常')}</label>
       </div>
       <div className="station-map">
         <canvas ref={canvas} width={mapWidth * 2} height={mapHeight * 2} aria-hidden="true" />
@@ -52,29 +54,29 @@ export function CampusMap({ state, nextStation }: { state: Snapshot; nextStation
               className={'map-point ' + station.status + (nextStation?.id === station.id ? ' recommended' : '')}
               key={station.id}
               style={{ left: x / mapWidth * 100 + '%', top: y / mapHeight * 100 + '%' }}
-              aria-label={station.name + '，' + stationStatus[station.status]}
+              aria-label={text(station.name) + ', ' + t(stationStatus[station.status])}
               aria-pressed={station.id === selected?.id}
               onClick={() => setSelectedId(station.id)}
             >
-              <span>{station.id.toUpperCase()}</span><b>{station.id.toUpperCase()} 站</b>
+              <span>{station.id.toUpperCase()}</span><b>{t('{station} 站', { station: station.id.toUpperCase() })}</b>
             </button>
           );
         })}
-        <span className="map-caption">校园示意图（非测绘比例）</span>
+        <span className="map-caption">{t('校园示意图（非测绘比例）')}</span>
       </div>
       <div className="map-footer">
         <div className="map-legend">
-          {Object.entries(stationStatus).map(([status, text]) => (
-            <span key={status}><i className={status} />{text}</span>
+          {Object.entries(stationStatus).map(([status, label]) => (
+            <span key={status}><i className={status} />{t(label)}</span>
           ))}
         </div>
-        <a href={officialMap} target="_blank" rel="noreferrer">校方地图 <ArrowUpRight size={13} /></a>
+        <a href={officialMap} target="_blank" rel="noreferrer">{t('校方地图')} <ArrowUpRight size={13} /></a>
       </div>
       {selected ? (
         <div className="map-details" aria-live="polite">
           <div className="map-details-title">
-            <div><strong>{selected.name}</strong><span>{selected.detail}</span></div>
-            {selected.id === nextStation?.id && <span className="status-chip priority">推荐下一站</span>}
+            <div><strong>{text(selected.name)}</strong><span>{text(selected.detail)}</span></div>
+            {selected.id === nextStation?.id && <span className="status-chip priority">{t('推荐下一站')}</span>}
           </div>
           <ul className="map-bin-list">
             {categoryOrder.map((category) => {
@@ -83,14 +85,14 @@ export function CampusMap({ state, nextStation }: { state: Snapshot; nextStation
               const ticket = state.tickets.find((item) => item.bin_id === bin.id && item.status !== 'closed');
               return (
                 <li key={bin.id}>
-                  <strong>{categories[category].label}</strong>
-                  <span className={bin.status}>{ticket ? ticketLabels[ticket.status] : binLabels[bin.status]}</span>
+                  <strong>{t(categories[category].label)}</strong>
+                  <span className={bin.status}>{t(ticket ? ticketLabels[ticket.status] : binLabels[bin.status])}</span>
                 </li>
               );
             })}
           </ul>
         </div>
-      ) : <p className="map-no-results" role="status">当前没有异常站点。</p>}
+      ) : <p className="map-no-results" role="status">{t('当前没有异常站点。')}</p>}
     </section>
   );
 }

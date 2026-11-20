@@ -59,7 +59,8 @@ svg { flex: none; }
 }
 .nav-tabs a:hover { color: var(--accent-dark); }
 .nav-tabs a[aria-current] { color: var(--ink); font-weight: 650; background: white; box-shadow: 0 2px 5px #232b4014; }
-.sim-trigger { justify-self: end; white-space: nowrap; }
+.topbar-actions { justify-self: end; display: flex; align-items: center; gap: 9px; }
+.sim-trigger { white-space: nowrap; }
 
 .outline, .primary, .light-button, .icon-button {
   min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -81,16 +82,17 @@ svg { flex: none; }
 .connection { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: .87rem; }
 .connection > span { width: 7px; height: 7px; border-radius: 100%; background: #a7783d; }
 .connection.online > span { background: #208a60; }
-.station-select {
+.station-select, .language-select {
   display: flex; align-items: center; gap: 4px; background: white; color: var(--accent);
   border: 1px solid var(--faint); border-radius: 100px; position: relative; min-height: 44px;
 }
-.station-select > svg:first-of-type { position: absolute; left: 12px; pointer-events: none; }
-.station-select .select-arrow { position: absolute; right: 10px; pointer-events: none; }
-.station-select select {
+.station-select > svg:first-of-type, .language-select > svg:first-of-type { position: absolute; left: 12px; pointer-events: none; }
+.station-select .select-arrow, .language-select .select-arrow { position: absolute; right: 10px; pointer-events: none; }
+.station-select select, .language-select select {
   appearance: none; border: 0; background: transparent; color: var(--ink); cursor: pointer;
   padding: 9px 34px 9px 36px; min-height: 44px; font-weight: 650; border-radius: 100px;
 }
+.language-select select { padding: 7px 25px 7px 33px; font-size: .88rem; }
 
 .student-grid, .cleaner-grid { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: var(--gap); align-items: start; }
 .student-right, .cleaner-left { display: grid; gap: var(--gap); min-width: 0; }
@@ -187,7 +189,7 @@ svg { flex: none; }
 .bin-led { width: 21px; height: 4px; background: #bfc4cc; border-radius: 9px; margin: 1px 0 3px; }
 .bin-card.lit .bin-led { background: var(--bin-fg); box-shadow: 0 0 11px var(--bin-fg); }
 .bin-icon, .ticket-icon { background: var(--bin-bg); color: var(--bin-fg); display: grid; place-items: center; width: 40px; height: 40px; border-radius: 14px; }
-.bin-card strong { font-size: .88rem; white-space: nowrap; }
+.bin-card strong { font-size: .88rem; line-height: 1.35; overflow-wrap: anywhere; }
 .bin-status { font-size: .81rem; line-height: 1.2; color: var(--muted); font-weight: 600; }
 .bin-status.full, .warn-text { color: #a05220; }
 .bin-card.lit .bin-status { color: var(--bin-fg); font-weight: 750; }
@@ -353,13 +355,17 @@ svg { flex: none; }
   .media-window { height: clamp(237px, 55vw, 350px); }
   .footer { padding: 27px var(--gutter); }
 }
+@media (max-width: 520px) {
+  .topbar-actions { gap: 6px; }
+  .sim-trigger { width: 44px; padding: 0; }
+  .sim-trigger span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
 @media (max-width: 410px) {
   :root { --gutter: 14px; --card-padding: 18px; }
   .brand { gap: 8px; }
   .brand-mark { width: 40px; height: 40px; border-radius: 14px; }
   .brand strong { font-size: 1.12rem; }
-  .brand div span { font-size: .73rem; }
-  .sim-trigger { padding: 0 10px; font-size: .86rem; }
+  .brand div span { font-size: .73rem; max-width: 124px; white-space: normal; line-height: 1.25; }
   .bins-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .bin-card { min-height: 116px; }
   .media-tabs button { gap: 3px; font-size: .85rem; }
@@ -371,8 +377,10 @@ svg { flex: none; }
   .sim-actions button { padding-inline: 9px; font-size: .88rem; }
 }
 @media (max-width: 350px) {
-  .sim-trigger { width: 44px; padding: 0; }
-  .sim-trigger span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .topbar-inner .brand-mark { width: 34px; height: 34px; }
+  .brand div span { max-width: 95px; }
+  .language-select > svg:first-of-type { display: none; }
+  .language-select select { padding-left: 10px; }
   .media-tabs button svg { display: none; }
   .map-point span { width: 28px; height: 28px; }
   .map-caption { right: 4px; bottom: 4px; font-size: .65rem; padding: 2px 5px; }

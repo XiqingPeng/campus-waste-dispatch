@@ -74,12 +74,24 @@ async fn analysis_uses_verified_closure_and_selected_window() {
     let month = send(&app, "POST", "/api/analysis", json!({ "days": 28 })).await;
 
     assert_eq!(week["source"], "rules");
+    assert_eq!(week["lang"], "zh-CN");
     assert_eq!(week["stats"]["opened"], 1);
     assert_eq!(week["stats"]["long_wait"], 1);
     assert_eq!(week["stats"]["mean_minutes"], Value::Null);
     assert_eq!(month["stats"]["opened"], 2);
     assert_eq!(month["stats"]["closed"], 1);
     assert_eq!(month["stats"]["mean_minutes"], 1.0);
+    let english = send(&app, "GET", "/api/analysis?days=7&lang=en", Value::Null).await;
+    assert_eq!(english["lang"], "en");
+    assert_eq!(english["stats"]["opened"], week["stats"]["opened"]);
+    assert_eq!(
+        english["stats"]["stations"][0]["name"],
+        "Residence Station A"
+    );
+    assert_eq!(
+        english["suggestions"][0]["evidence"],
+        "Open tickets waiting at least 20 minutes: 1."
+    );
     assert!(
         month["suggestions"][0]["evidence"]
             .as_str()

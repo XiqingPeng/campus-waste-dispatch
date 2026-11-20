@@ -163,7 +163,7 @@ async fn analyze(
     let snapshot = state.store.snapshot()?;
     state
         .analysis
-        .report(snapshot, input.days, now_ms(), true)
+        .report(snapshot, input, now_ms(), true)
         .await
         .map(Json)
 }
@@ -175,7 +175,7 @@ async fn analysis_preview(
     let snapshot = state.store.snapshot()?;
     state
         .analysis
-        .report(snapshot, input.days, now_ms(), false)
+        .report(snapshot, input, now_ms(), false)
         .await
         .map(Json)
 }
