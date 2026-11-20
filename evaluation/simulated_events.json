@@ -1,0 +1,100 @@
+{
+  "source": "synthetic course demo, not measured on campus",
+  "config": {
+    "positions": {
+      "depot": [
+        14,
+        80
+      ],
+      "a": [
+        21,
+        30
+      ],
+      "b": [
+        55,
+        43
+      ],
+      "c": [
+        80,
+        70
+      ]
+    },
+    "meters_per_unit": 3,
+    "speed_m_per_s": 1,
+    "service_s": 120,
+    "horizon_s": 3600,
+    "patrol_interval_s": 1200,
+    "tie_s": 60,
+    "patrol_order": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  "scenarios": {
+    "sparse": [
+      [
+        60,
+        "a-recycle"
+      ],
+      [
+        1440,
+        "b-residual"
+      ],
+      [
+        2520,
+        "c-food"
+      ]
+    ],
+    "peak": [
+      [
+        60,
+        "b-recycle"
+      ],
+      [
+        120,
+        "a-recycle"
+      ],
+      [
+        120,
+        "c-residual"
+      ],
+      [
+        420,
+        "b-food"
+      ],
+      [
+        540,
+        "a-food"
+      ],
+      [
+        720,
+        "c-recycle"
+      ],
+      [
+        1440,
+        "a-residual"
+      ],
+      [
+        1560,
+        "b-recycle"
+      ],
+      [
+        1740,
+        "c-food"
+      ],
+      [
+        2520,
+        "a-recycle"
+      ],
+      [
+        2640,
+        "c-recycle"
+      ],
+      [
+        3360,
+        "b-food"
+      ]
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+scenario,policy,full_episodes,total_full_wait_min,mean_full_wait_min,max_full_wait_min,walked_m
+sparse,fixed_patrol,3,12.12,4.04,6.22,1713.94
+sparse,on_demand,3,12.22,4.07,4.53,571.31
+peak,fixed_patrol,12,76.47,6.37,15.53,2285.26
+peak,on_demand,12,120.83,10.07,16.42,2059.35

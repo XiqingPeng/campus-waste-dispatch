@@ -1,0 +1,14 @@
+/target/
+/backend/target/
+/frontend/node_modules/
+/frontend/dist/
+.env
+.env.*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+__pycache__/
+.DS_Store
