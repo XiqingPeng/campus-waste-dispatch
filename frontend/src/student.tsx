@@ -77,7 +77,7 @@ export function Student({ state, station, visible, connected }: {
             <span className="section-icon"><Lightbulb size={21} /></span>
             <div>
               <h2 id="bins-title">{t('本站桶位')}</h2>
-              <p>{t('桶口灯光为界面模拟')}</p>
+              <p>{t('高亮桶位为推荐投放点')}</p>
             </div>
             <span className="source-label"><MapPin size={13} /> {station ? text(station.name) : t('本站')}</span>
           </div>

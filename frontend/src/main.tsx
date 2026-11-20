@@ -214,7 +214,7 @@ function App() {
       <main className={view === 'cleaner' ? 'layout cleaner-layout' : 'layout'} id="main-content" tabIndex={-1}>
         <section className="page-heading" aria-labelledby="page-title">
           <div>
-            <div className="location"><MapPin size={16} /> {t('宿舍区')} <span>{t('示范站点')}</span></div>
+            <div className="location"><MapPin size={16} /> {t('宿舍区')}</div>
             <h1 id="page-title">{t(view === 'student' ? '校园分类投放' : '保洁工作台')}</h1>
             <p>{t(view === 'student' ? '识别手中的物品，获取当前可用的投放位置。' : '查看满桶工单与推荐清运顺序。')}</p>
           </div>
@@ -251,7 +251,6 @@ function App() {
         setStationId('a');
         setNotice('');
       }} />
-      <footer className="footer">{t('课程原型使用模拟站点、红外状态和指示灯。')}</footer>
     </>
   );
 }

@@ -84,7 +84,7 @@ export function DispatchAnalysis({ connected, revision }: { connected: boolean; 
     <section className="panel dispatch-analysis" aria-labelledby="analysis-title" aria-busy={pending}>
       <div className="panel-heading analysis-heading">
         <span className="section-icon"><BarChart3 size={21} /></span>
-        <div><h2 id="analysis-title">{t('清运分析')}</h2><p>{t('按演示工单创建时间统计')}</p></div>
+        <div><h2 id="analysis-title">{t('清运分析')}</h2><p>{t('按工单创建时间统计')}</p></div>
         <div className="analysis-controls">
           <div className="analysis-range" role="group" aria-label={t('分析时间范围')}>
             {([7, 28] as const).map((range) => (
