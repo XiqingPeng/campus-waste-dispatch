@@ -1,3 +1,4 @@
+mod analysis;
 mod db;
 mod vision;
 
@@ -20,6 +21,7 @@ use axum::{
 use serde_json::{Value, json};
 use tower_http::services::{ServeDir, ServeFile};
 
+use analysis::{Analysis, AnalysisRequest, Report};
 use db::{Guidance, GuidanceQuery, SensorReport, Snapshot, Store};
 use vision::{Recognition, Recognize, Vision};
 
@@ -63,13 +65,15 @@ impl IntoResponse for ApiError {
 struct AppState {
     store: Arc<Store>,
     vision: Vision,
+    analysis: Analysis,
 }
 
 impl AppState {
-    fn open(path: &Path, vision: Vision) -> rusqlite::Result<Self> {
+    fn open(path: &Path, vision: Vision, analysis: Analysis) -> rusqlite::Result<Self> {
         Ok(Self {
             store: Arc::new(Store::open(path)?),
             vision,
+            analysis,
         })
     }
 }
@@ -89,6 +93,10 @@ fn api(state: AppState) -> Router {
         .route("/sensor", post(sensor))
         .route("/tickets/{id}/collect", post(collect))
         .route("/demo/reset", post(reset))
+        .route(
+            "/analysis",
+            post(analyze).layer(DefaultBodyLimit::max(1024)),
+        )
         .route(
             "/recognize",
             post(recognize).layer(DefaultBodyLimit::max(1_500_000)),
@@ -145,6 +153,19 @@ async fn recognize(
     state.vision.recognize(input).await.map(Json)
 }
 
+async fn analyze(
+    State(state): State<AppState>,
+    input: Result<Json<AnalysisRequest>, JsonRejection>,
+) -> Result<Json<Report>, ApiError> {
+    let Json(input) = input?;
+    let snapshot = state.store.snapshot()?;
+    state
+        .analysis
+        .report(snapshot, input.days, now_ms())
+        .await
+        .map(Json)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address: SocketAddr = env::var("WASTE_BIND")
@@ -163,7 +184,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let web_root = env::var_os("WASTE_WEB_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join("frontend/dist"));
-    let state = AppState::open(&database, Vision::from_env()?)?;
+    let state = AppState::open(&database, Vision::from_env()?, Analysis::from_env()?)?;
     let app = Router::new().nest("/api", api(state)).fallback_service(
         ServeDir::new(&web_root).fallback(ServeFile::new(web_root.join("index.html"))),
     );

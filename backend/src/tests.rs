@@ -6,12 +6,12 @@ use axum::{
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use crate::{AppState, api, now_ms, vision::Vision};
+use crate::{AppState, analysis::Analysis, api, now_ms, vision::Vision};
 
 fn test_app() -> Router {
     Router::new().nest(
         "/api",
-        api(AppState::open(":memory:".as_ref(), Vision::default()).unwrap()),
+        api(AppState::open(":memory:".as_ref(), Vision::default(), Analysis::offline()).unwrap()),
     )
 }
 
@@ -41,6 +41,53 @@ async fn send(router: &Router, method: &str, path: &str, body: Value) -> Value {
 
 fn event(id: &str, bin: &str, status: &str, time: i64) -> Value {
     json!({"event_id": id, "bin_id": bin, "status": status, "observed_at": time})
+}
+
+#[tokio::test]
+async fn analysis_uses_verified_closure_and_selected_window() {
+    let app = test_app();
+    let now = now_ms();
+    let older = now - 8 * 86_400_000;
+    send(
+        &app,
+        "POST",
+        "/api/sensor",
+        event("old", "a-food", "full", older),
+    )
+    .await;
+    send(
+        &app,
+        "POST",
+        "/api/sensor",
+        event("old-clear", "a-food", "available", older + 60_000),
+    )
+    .await;
+    send(
+        &app,
+        "POST",
+        "/api/sensor",
+        event("new", "b-recycle", "full", now - 1_500_000),
+    )
+    .await;
+
+    let week = send(&app, "POST", "/api/analysis", json!({ "days": 7 })).await;
+    let month = send(&app, "POST", "/api/analysis", json!({ "days": 28 })).await;
+
+    assert_eq!(week["source"], "rules");
+    assert_eq!(week["stats"]["opened"], 1);
+    assert_eq!(week["stats"]["long_wait"], 1);
+    assert_eq!(week["stats"]["mean_minutes"], Value::Null);
+    assert_eq!(month["stats"]["opened"], 2);
+    assert_eq!(month["stats"]["closed"], 1);
+    assert_eq!(month["stats"]["mean_minutes"], 1.0);
+    assert!(
+        month["suggestions"][0]["evidence"]
+            .as_str()
+            .unwrap()
+            .contains("20 分钟")
+    );
+    let (status, _) = request(&app, "POST", "/api/analysis", json!({ "days": 9 })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

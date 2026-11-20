@@ -11,8 +11,8 @@ const DEPOT: (i64, i64) = (14, 80);
 
 #[derive(Clone, Copy, Serialize)]
 pub struct Station {
-    id: &'static str,
-    name: &'static str,
+    pub(crate) id: &'static str,
+    pub(crate) name: &'static str,
     detail: &'static str,
     x: i64,
     y: i64,
@@ -106,8 +106,8 @@ pub struct SensorReport {
 
 #[derive(Serialize)]
 pub struct Bin {
-    id: String,
-    station_id: String,
+    pub(crate) id: String,
+    pub(crate) station_id: String,
     category: String,
     status: String,
     observed_at: Option<i64>,
@@ -116,16 +116,17 @@ pub struct Bin {
 #[derive(Serialize)]
 pub struct Ticket {
     id: i64,
-    bin_id: String,
-    status: String,
-    opened_at: i64,
+    pub(crate) bin_id: String,
+    pub(crate) status: String,
+    pub(crate) opened_at: i64,
+    pub(crate) closed_at: Option<i64>,
 }
 
 #[derive(Serialize)]
 pub struct Snapshot {
-    bins: Vec<Bin>,
-    tickets: Vec<Ticket>,
-    stations: [Station; 3],
+    pub(crate) bins: Vec<Bin>,
+    pub(crate) tickets: Vec<Ticket>,
+    pub(crate) stations: [Station; 3],
     recommendation: Option<i64>,
 }
 
@@ -146,7 +147,7 @@ pub struct Store(Mutex<Connection>);
 
 impl Store {
     pub fn open(path: &Path) -> rusqlite::Result<Self> {
-        let connection = Connection::open(path)?;
+        let mut connection = Connection::open(path)?;
         connection.execute_batch(
             "PRAGMA foreign_keys = ON;
              CREATE TABLE IF NOT EXISTS bins (
@@ -161,7 +162,8 @@ impl Store {
                  bin_id TEXT NOT NULL REFERENCES bins(id),
                  status TEXT NOT NULL CHECK(status IN ('pending', 'awaiting_verify', 'needs_review', 'closed')),
                  opened_at INTEGER NOT NULL,
-                 collection_requested_at INTEGER
+                 collection_requested_at INTEGER,
+                 closed_at INTEGER
              );
              CREATE UNIQUE INDEX IF NOT EXISTS active_ticket_per_bin
                  ON tickets(bin_id) WHERE status != 'closed';
@@ -172,6 +174,17 @@ impl Store {
                  observed_at INTEGER NOT NULL
              );",
         )?;
+        let migration =
+            connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let has_closed_at: bool = migration.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('tickets') WHERE name = 'closed_at')",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_closed_at {
+            migration.execute("ALTER TABLE tickets ADD COLUMN closed_at INTEGER", [])?;
+        }
+        migration.commit()?;
         for station in STATIONS {
             for category in Category::ALL {
                 let category = category.as_str();
@@ -341,8 +354,9 @@ fn apply_sensor(transaction: &Transaction<'_>, event: SensorReport) -> Result<()
         }
         BinStatus::Available => {
             transaction.execute(
-                "UPDATE tickets SET status = 'closed' WHERE bin_id = ?1 AND status != 'closed'",
-                [&event.bin_id],
+                "UPDATE tickets SET status = 'closed', closed_at = ?2
+                 WHERE bin_id = ?1 AND status != 'closed'",
+                params![event.bin_id, event.observed_at],
             )?;
         }
         BinStatus::Unknown => {}
@@ -365,7 +379,7 @@ fn snapshot(connection: &Connection) -> rusqlite::Result<Snapshot> {
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let mut statement = connection.prepare(
-        "SELECT id, bin_id, status, opened_at FROM tickets ORDER BY opened_at ASC, id ASC",
+        "SELECT id, bin_id, status, opened_at, closed_at FROM tickets ORDER BY opened_at ASC, id ASC",
     )?;
     let tickets = statement
         .query_map([], |row| {
@@ -374,6 +388,7 @@ fn snapshot(connection: &Connection) -> rusqlite::Result<Snapshot> {
                 bin_id: row.get(1)?,
                 status: row.get(2)?,
                 opened_at: row.get(3)?,
+                closed_at: row.get(4)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
