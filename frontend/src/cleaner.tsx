@@ -69,8 +69,8 @@ export function Cleaner({ state, connected, busy, lastUpdated, onCollect }: {
 
   return (
     <div className="cleaner-dashboard cleaner-v2">
+      <div className="operations-overview">
       <div className="operations-context">
-        <span className="demo-tag">{t('模拟数据')}</span>
         <span>{t('全校 {count} 个生活垃圾桶点位', { count: state?.bins.length ?? 0 })}</span>
         <span className={connected ? 'sync-stamp' : 'sync-stamp stale'}>{t(connected ? '最近同步：{time}' : '数据可能过期 · 最近同步：{time}', { time: time(lastUpdated) })}</span>
       </div>
@@ -92,6 +92,7 @@ export function Cleaner({ state, connected, busy, lastUpdated, onCollect }: {
         <button className="icon-button" aria-label={t('关闭提醒')} onClick={() => setNotice(null)}><X size={17} /></button>
       </div>}
       <div className="collection-toolbar"><label>{t('分区筛选')}<select aria-label={t('分区筛选')} value={zone} onChange={e=>{setZone(e.target.value);setStationId('all');}}><option value="all">{t('全部分区')}</option>{zones.map(value=><option key={value} value={value}>{text(value)}</option>)}</select></label><span>{t('点位与工单来自同一份后端数据。')}</span></div>
+      </div>
       <div className="operations-grid">
         {state ? <CollectionMap state={state} now={now} zone={zone} selectedId={stationId} onSelect={id=>{setStationId(id);if(id!=='all')setZone('all');}} /> : <section className="panel queue-empty">{t('等待后端连接')}</section>}
         <section className="panel operations-queue" aria-labelledby="queue-title" data-testid="queue">

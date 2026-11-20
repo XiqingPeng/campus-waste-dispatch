@@ -44,7 +44,7 @@ const english = {
   "最近有效上报": "Latest valid report",
   "取消点位筛选": "Clear location filter",
   "点击地图点位，查看编号、设备状态和关联工单。": "Select a map marker to see its ID, device status and active ticket.",
-  "示意点位，不代表实际部署": "Illustrative locations, not a real deployment",
+  "地图信息": "Map information",
   "记录与分析": "Records and analysis",
   "已有结果会保留，清运操作不受影响。": "Previous results are retained. Collection operations remain available.",
   "统计分析": "Statistics",

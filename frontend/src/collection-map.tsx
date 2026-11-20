@@ -5,6 +5,10 @@ import { binLabels, ticketLabels } from './domain';
 import { deviceOnline, overdue } from './cleaner-model';
 import { useLocale } from './locale';
 
+// Crop the presentation only; catalog coordinates stay normalized to the full base map.
+const campusView = { x: 350, y: 30, width: 840, height: 850 };
+const baseMap = { width: 1400, height: 950 };
+
 export function CollectionMap({
   state,
   now,
@@ -81,9 +85,22 @@ export function CollectionMap({
       >
         <div
           className="collection-map-surface"
-          style={{ width: `${zoom * 100}%`, minWidth: 820 * zoom }}
+          style={{
+            width: `${zoom * 100}%`,
+            minWidth: 560 * zoom,
+            aspectRatio: `${campusView.width} / ${campusView.height}`,
+          }}
         >
-          <img src="/maps/collection-campus.svg" alt="" />
+          <svg
+            viewBox={`${campusView.x} ${campusView.y} ${campusView.width} ${campusView.height}`}
+            aria-hidden="true"
+          >
+            <image
+              href="/maps/collection-campus.svg"
+              width={baseMap.width}
+              height={baseMap.height}
+            />
+          </svg>
           {state.stations.map((point) => {
             const device = state.bins.find((bin) => bin.id === point.id);
             const active = state.tickets.find(
@@ -117,8 +134,8 @@ export function CollectionMap({
                 type="button"
                 className={'collection-point ' + status + (dim ? ' dim' : '')}
                 style={{
-                  left: `${(point.map_x ?? 0) * 100}%`,
-                  top: `${(point.map_y ?? 0) * 100}%`,
+                  left: `${(((point.map_x ?? 0) * baseMap.width - campusView.x) / campusView.width) * 100}%`,
+                  top: `${(((point.map_y ?? 0) * baseMap.height - campusView.y) / campusView.height) * 100}%`,
                 }}
                 aria-label={`${point.id} ${text(point.name)} · ${label}`}
                 aria-pressed={selectedId === point.id}
@@ -132,27 +149,46 @@ export function CollectionMap({
           })}
         </div>
       </div>
-      <div className="collection-legend">
-        {(['available', 'full', 'overdue', 'verify', 'unknown'] as const).map(
-          (key, i) => (
-            <span key={key}>
-              <i className={key} />
-              {t(
-                (
-                  [
-                    '未满',
-                    '待清运',
-                    '超时待处理',
-                    '待传感器确认',
-                    '离线或未知',
-                  ] as const
-                )[i],
-              )}
-            </span>
-          ),
-        )}
+      <div className="collection-map-footer">
+        <div className="collection-legend">
+          {(['available', 'full', 'overdue', 'verify', 'unknown'] as const).map(
+            (key, i) => (
+              <span key={key}>
+                <i className={key} />
+                {t(
+                  (
+                    [
+                      '未满',
+                      '待清运',
+                      '超时待处理',
+                      '待传感器确认',
+                      '离线或未知',
+                    ] as const
+                  )[i],
+                )}
+              </span>
+            ),
+          )}
+        </div>
+        <details className="map-credit">
+          <summary>{t('地图信息')}</summary>
+          <p>
+            ©{' '}
+            <a
+              href="https://www.openstreetmap.org/copyright"
+              target="_blank"
+              rel="noreferrer"
+            >
+              OpenStreetMap contributors
+            </a>{' '}
+            · ODbL
+          </p>
+        </details>
       </div>
-      <div className="collection-point-detail" aria-live="polite">
+      <div
+        className={selected && bin ? 'collection-point-detail' : undefined}
+        aria-live="polite"
+      >
         {selected && bin ? (
           <>
             <div className="detail-eyebrow">
@@ -187,20 +223,7 @@ export function CollectionMap({
               {t('取消点位筛选')}
             </button>
           </>
-        ) : (
-          <p>{t('点击地图点位，查看编号、设备状态和关联工单。')}</p>
-        )}
-      </div>
-      <div className="map-credit">
-        ©{' '}
-        <a
-          href="https://www.openstreetmap.org/copyright"
-          target="_blank"
-          rel="noreferrer"
-        >
-          OpenStreetMap contributors
-        </a>{' '}
-        · ODbL · {t('示意点位，不代表实际部署')}
+        ) : null}
       </div>
     </section>
   );
