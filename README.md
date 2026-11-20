@@ -58,4 +58,4 @@ python3 scripts/verify_demo.py --base-url http://127.0.0.1:8080
 
 ## 素材
 
-空饮料瓶照片由 Ron Lach 拍摄，用于演示样例。[Pexels 原图](https://www.pexels.com/photo/close-up-shot-of-a-person-holding-a-plastic-bottle-9037601/)和[使用许可](https://www.pexels.com/license/)
+内置的四种投放样例图由 ImageGen 生成，存于 `frontend/public/samples/waste-items.jpg`。选择样例时会回放预设的识别结果。

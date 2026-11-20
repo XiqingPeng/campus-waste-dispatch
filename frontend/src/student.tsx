@@ -36,7 +36,7 @@ export function Student({ state, station, visible, connected }: {
               <h2 id="guidance-title">{t('投放指引')}</h2>
               <p>{station ? t('{name}（{detail}）', { name: text(station.name), detail: text(station.detail) }) : t('等待站点连接')}</p>
             </div>
-            {result && <span className="source-label">{t(result.source === 'replay' ? '样例回放' : 'JEV 识别')}</span>}
+            {result?.source === 'jev' && <span className="source-label">{t('JEV 识别')}</span>}
           </div>
           <div className="decision-slot" aria-live="polite">
             {!result ? (

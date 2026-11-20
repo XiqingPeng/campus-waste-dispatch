@@ -12,10 +12,10 @@ export type Category = keyof typeof categories;
 export const categoryOrder = Object.keys(categories) as Category[];
 
 export const samples = {
-  bottle: { label: '空饮料瓶', category: 'recycle', image: '/samples/bottle.jpg' },
-  cup: { label: '带盖饮料杯', category: 'residual' },
-  tissue: { label: '用过的纸巾', category: 'residual' },
-  banana: { label: '香蕉皮', category: 'food' },
+  bottle: { label: '空饮料瓶' },
+  cup: { label: '带盖饮料杯' },
+  tissue: { label: '用过的纸巾' },
+  banana: { label: '香蕉皮' },
 } as const;
 
 export type Sample = keyof typeof samples;

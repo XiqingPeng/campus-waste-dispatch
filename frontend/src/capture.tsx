@@ -1,7 +1,7 @@
-import { Camera, CircleAlert, Film, Image as ImageIcon, ScanLine, Upload, Video, X } from 'lucide-react';
+import { Camera, CircleAlert, Image as ImageIcon, ScanLine, Upload, Video, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { errorText, request } from './api';
-import { categories, sampleKeys, samples } from './domain';
+import { sampleKeys, samples } from './domain';
 import type { Result, Sample } from './domain';
 import { useLocale } from './locale';
 
@@ -175,7 +175,6 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
   }
 
   const sample = input.kind === 'sample' ? samples[input.sample] : null;
-  const SampleIcon = sample ? categories[sample.category].icon : null;
   const currentLabel = sample?.label ?? (input.kind === 'camera' ? '摄像头' : 'label' in input ? input.label : '');
   const uploaded = input.kind === 'image' || input.kind === 'video';
 
@@ -191,7 +190,7 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
 
       <div className="media-tabs" aria-label={t('图像来源')}>
         <button className={sample ? 'active' : ''} aria-pressed={Boolean(sample)} onClick={() => chooseSample('bottle')}>
-          <ImageIcon size={17} /> {t('样例回放')}
+          <ImageIcon size={17} /> {t('样例')}
         </button>
         <button className={uploaded ? 'active' : ''} aria-pressed={uploaded} onClick={() => fileInput.current?.click()}>
           <Upload size={17} /> {t('上传文件')}
@@ -214,13 +213,8 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
       </div>
 
       <div className={'media-window' + (sample ? ' media-demo' : '')}>
-        {sample && (
-          'image' in sample
-            ? <img className="sample-photo" src={sample.image} alt={t('投放物品公开样例')} />
-            : <div className="sample-placeholder">
-                {SampleIcon && <SampleIcon size={51} strokeWidth={1.3} aria-hidden />}
-                <span>{t(sample.label)}</span>
-              </div>
+        {input.kind === 'sample' && (
+          <div className={'sample-photo sample-' + input.sample} role="img" aria-label={t(samples[input.sample].label)} />
         )}
         {input.kind === 'image' && <img src={input.data} alt={t('当前待识别的物品')} />}
         {input.kind === 'video' && (
@@ -236,21 +230,20 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
           />
         )}
         {input.kind === 'camera' && <video ref={video} playsInline autoPlay muted aria-label={t('摄像头实时画面')} />}
-        <span className="media-tag">{sample ? <Film size={14} /> : <Video size={14} />}
-          {t(sample ? ('image' in sample ? '公开样例回放' : '样例回放') : 'JEV 实时推理')}
-        </span>
+        {!sample && <span className="media-tag"><Video size={14} /> {t('JEV 实时推理')}</span>}
         {input.kind === 'camera' && (
           <button className="media-close" aria-label={t('关闭摄像头')} onClick={() => chooseSample('bottle')}><X size={16} /></button>
         )}
-        {(input.kind === 'sample' || input.kind === 'camera') && <div className="viewfinder" aria-hidden><i /><i /><i /><i /></div>}
-        {input.kind !== 'video' && <span className="media-caption">{text(currentLabel)}</span>}
+        {input.kind === 'camera' && <div className="viewfinder" aria-hidden><i /><i /><i /><i /></div>}
+        {!sample && input.kind !== 'video' && <span className="media-caption">{text(currentLabel)}</span>}
       </div>
 
       {sample ? (
-        <div className="sample-row" aria-label={t('选择演示样例')}>
+        <div className="sample-row" role="group" aria-label={t('选择样例')}>
           {sampleKeys.map((key) => (
             <button key={key} aria-pressed={input.kind === 'sample' && input.sample === key} onClick={() => chooseSample(key)}>
-              {t(samples[key].label)}
+              <span className={'sample-photo sample-' + key} aria-hidden />
+              <span>{t(samples[key].label)}</span>
             </button>
           ))}
         </div>
@@ -262,7 +255,7 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
 
       {error && <div className="callout error" role="status"><CircleAlert size={17} /><span>{text(error)}</span></div>}
       <button className="primary recognize" onClick={() => void recognize()} disabled={pending || openingCamera}>
-        <ScanLine size={20} /> {t(pending ? '处理中…' : sample ? '识别样例' : input.kind === 'video' || input.kind === 'camera' ? '截帧识别' : '识别图片')}
+        <ScanLine size={20} /> {t(pending ? '处理中…' : input.kind === 'video' || input.kind === 'camera' ? '截帧识别' : '识别图片')}
       </button>
     </section>
   );
