@@ -97,6 +97,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "reqwest",
+ "ring",
  "rusqlite",
  "serde",
  "serde_json",

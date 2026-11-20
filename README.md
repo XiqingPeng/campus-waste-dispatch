@@ -26,6 +26,8 @@ cargo run --locked --manifest-path backend/Cargo.toml
 
 页头可切换中文和 English，浏览器会记住选择。本地规则和手动生成的 DeepSeek 建议均按当前语言显示。
 
+部署共享版时，用仓库根目录构建一个 Railway 服务，为 SQLite 挂载持久卷，并设置组内口令。 [部署与交接说明](HANDOFF.md#railway-上线)
+
 ## Jev 实时图片判断
 
 在启动 Rust 服务的进程中配置环境变量 `TYPESAFE_API_KEY`，然后使用学生端的实时识别。浏览器会把照片或视频当前帧转成 JPEG，再由服务端发送到 TypeSafe System One。Jev 回答预设的 Choice 选项，应用将物品结果映射成四类桶位或一条澄清提示。模型遇到超出样例范围的物品时可以弃权。

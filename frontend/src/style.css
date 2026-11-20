@@ -354,6 +354,12 @@ svg { flex: none; }
 .sim-wrap { padding: 28px; }
 .sim-heading { display: flex; gap: 12px; align-items: center; }
 .sim-heading .icon-button { margin-left: auto; }
+.access-note { color: var(--muted); margin: 16px 0; }
+.access-field { display: grid; gap: 6px; margin-bottom: 14px; font-size: .9rem; font-weight: 650; }
+.access-field input {
+  width: 100%; min-height: 44px; padding: 0 10px; font-size: 1rem; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--faint); border-radius: 5px;
+}
 .sim-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 24px; }
 .sim-fields label { display: grid; gap: 6px; font-size: .9rem; font-weight: 650; }
 .sim-fields select { width: 100%; min-width: 0; background: var(--surface); border-radius: 5px; border: 1px solid var(--faint); min-height: 44px; padding: 0 10px; color: var(--ink); }

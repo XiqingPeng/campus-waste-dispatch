@@ -1,17 +1,27 @@
 use axum::{
     Router,
     body::{Body, to_bytes},
-    http::{Request, StatusCode},
+    http::{Request, StatusCode, header},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use crate::{AppState, analysis::Analysis, api, now_ms, vision::Vision};
+use crate::{AppState, access::Access, analysis::Analysis, api, now_ms, vision::Vision};
 
 fn test_app() -> Router {
+    test_app_with_access(Access::default())
+}
+
+fn test_app_with_access(access: Access) -> Router {
     Router::new().nest(
         "/api",
-        api(AppState::open(":memory:".as_ref(), Vision::default(), Analysis::offline()).unwrap()),
+        api(AppState::open(
+            ":memory:".as_ref(),
+            Vision::default(),
+            Analysis::offline(),
+            access,
+        )
+        .unwrap()),
     )
 }
 
@@ -41,6 +51,94 @@ async fn send(router: &Router, method: &str, path: &str, body: Value) -> Value {
 
 fn event(id: &str, bin: &str, status: &str, time: i64) -> Value {
     json!({"event_id": id, "bin_id": bin, "status": status, "observed_at": time})
+}
+
+#[tokio::test]
+async fn team_access_preserves_public_browsing_and_guards_writes_and_model_calls() {
+    const PASSCODE: &str = "test-only-not-a-production-passcode";
+    let app = test_app_with_access(Access::configured(PASSCODE, true));
+    assert_eq!(
+        send(&app, "GET", "/api/access", Value::Null).await,
+        json!({ "required": true, "signed_in": false })
+    );
+    assert_eq!(
+        send(&app, "GET", "/api/analysis?days=7", Value::Null).await["source"],
+        "rules"
+    );
+    assert_eq!(
+        send(
+            &app,
+            "POST",
+            "/api/recognize",
+            json!({ "mode": "replay", "sample": "bottle" })
+        )
+        .await["source"],
+        "replay"
+    );
+    let full = event("protected-full", "a-recycle", "full", now_ms());
+    for (path, body) in [
+        ("/api/sensor", full.clone()),
+        ("/api/tickets/1/collect", json!({})),
+        ("/api/demo/reset", json!({})),
+        ("/api/analysis", json!({ "days": 7 })),
+        (
+            "/api/recognize",
+            json!({ "mode": "live", "image": "ignored" }),
+        ),
+        ("/api/access", json!({ "passcode": "incorrect" })),
+    ] {
+        assert_eq!(
+            request(&app, "POST", path, body).await.0,
+            StatusCode::UNAUTHORIZED,
+            "{path}"
+        );
+    }
+    let login = app
+        .clone()
+        .oneshot(
+            Request::post("/api/access")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(json!({ "passcode": PASSCODE }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login.status(), StatusCode::OK);
+    let cookie = login.headers()[header::SET_COOKIE].to_str().unwrap();
+    assert!(
+        cookie.contains("HttpOnly")
+            && cookie.contains("SameSite=Strict")
+            && cookie.contains("Secure")
+    );
+    assert!(!cookie.contains(PASSCODE));
+    let session = cookie.split(';').next().unwrap();
+    let full_result = app
+        .clone()
+        .oneshot(
+            Request::post("/api/sensor")
+                .header(header::COOKIE, session)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(full.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(full_result.status(), StatusCode::OK);
+    let state = send(&app, "GET", "/api/state", Value::Null).await;
+    assert_eq!(state["tickets"].as_array().unwrap().len(), 1);
+
+    let tampered = app
+        .clone()
+        .oneshot(
+            Request::post("/api/demo/reset")
+                .header(header::COOKIE, format!("{session}Z"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(tampered.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(send(&app, "GET", "/api/state", Value::Null).await, state);
 }
 
 #[tokio::test]

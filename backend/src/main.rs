@@ -1,3 +1,4 @@
+mod access;
 mod analysis;
 mod db;
 mod vision;
@@ -13,7 +14,7 @@ use std::{
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path as RoutePath, Query, State, rejection::JsonRejection},
-    http::{StatusCode, header},
+    http::{HeaderMap, StatusCode, header},
     middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -21,6 +22,7 @@ use axum::{
 use serde_json::{Value, json};
 use tower_http::services::{ServeDir, ServeFile};
 
+use access::{Access, Login, Status as AccessStatus};
 use analysis::{Analysis, AnalysisRequest, Report};
 use db::{Guidance, GuidanceQuery, SensorReport, Snapshot, Store};
 use vision::{Recognition, Recognize, Vision};
@@ -66,14 +68,21 @@ struct AppState {
     store: Arc<Store>,
     vision: Vision,
     analysis: Analysis,
+    access: Access,
 }
 
 impl AppState {
-    fn open(path: &Path, vision: Vision, analysis: Analysis) -> rusqlite::Result<Self> {
+    fn open(
+        path: &Path,
+        vision: Vision,
+        analysis: Analysis,
+        access: Access,
+    ) -> rusqlite::Result<Self> {
         Ok(Self {
             store: Arc::new(Store::open(path)?),
             vision,
             analysis,
+            access,
         })
     }
 }
@@ -90,6 +99,13 @@ fn api(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/state", get(snapshot))
         .route("/guidance", get(guidance))
+        .route(
+            "/access",
+            get(access_status)
+                .post(access_login)
+                .layer(DefaultBodyLimit::max(1024)),
+        )
+        .route("/access/logout", post(access_logout))
         .route("/sensor", post(sensor))
         .route("/tickets/{id}/collect", post(collect))
         .route("/demo/reset", post(reset))
@@ -128,10 +144,28 @@ async fn guidance(
     state.store.guidance(query).map(Json)
 }
 
+async fn access_status(State(state): State<AppState>, headers: HeaderMap) -> Json<AccessStatus> {
+    state.access.status(&headers)
+}
+
+async fn access_login(
+    State(state): State<AppState>,
+    input: Result<Json<Login>, JsonRejection>,
+) -> Result<(HeaderMap, Json<AccessStatus>), ApiError> {
+    let Json(input) = input?;
+    state.access.login(input)
+}
+
+async fn access_logout(State(state): State<AppState>) -> (HeaderMap, Json<AccessStatus>) {
+    state.access.logout()
+}
+
 async fn sensor(
     State(state): State<AppState>,
+    headers: HeaderMap,
     input: Result<Json<SensorReport>, JsonRejection>,
 ) -> Result<Json<Snapshot>, ApiError> {
+    state.access.require(&headers)?;
     let Json(event) = input?;
     state.store.sensor(event, now_ms()).map(Json)
 }
@@ -139,26 +173,38 @@ async fn sensor(
 async fn collect(
     State(state): State<AppState>,
     RoutePath(id): RoutePath<i64>,
+    headers: HeaderMap,
 ) -> Result<Json<Snapshot>, ApiError> {
+    state.access.require(&headers)?;
     state.store.collect(id, now_ms()).map(Json)
 }
 
-async fn reset(State(state): State<AppState>) -> Result<Json<Snapshot>, ApiError> {
+async fn reset(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Snapshot>, ApiError> {
+    state.access.require(&headers)?;
     state.store.reset().map(Json)
 }
 
 async fn recognize(
     State(state): State<AppState>,
+    headers: HeaderMap,
     input: Result<Json<Recognize>, JsonRejection>,
 ) -> Result<Json<Recognition>, ApiError> {
     let Json(input) = input?;
+    if input.is_live() {
+        state.access.require(&headers)?;
+    }
     state.vision.recognize(input).await.map(Json)
 }
 
 async fn analyze(
     State(state): State<AppState>,
+    headers: HeaderMap,
     input: Result<Json<AnalysisRequest>, JsonRejection>,
 ) -> Result<Json<Report>, ApiError> {
+    state.access.require(&headers)?;
     let Json(input) = input?;
     let snapshot = state.store.snapshot()?;
     state
@@ -182,13 +228,28 @@ async fn analysis_preview(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let address: SocketAddr = env::var("WASTE_BIND")
-        .unwrap_or_else(|_| "127.0.0.1:8080".to_owned())
-        .parse()?;
+    let railway = env::var_os("RAILWAY_ENVIRONMENT_ID").is_some();
+    let access = Access::from_env(railway)?;
+    let default_address = if railway {
+        format!(
+            "0.0.0.0:{}",
+            env::var("PORT").unwrap_or_else(|_| "8080".to_owned())
+        )
+    } else {
+        "127.0.0.1:8080".to_owned()
+    };
+    let address: SocketAddr = env::var("WASTE_BIND").unwrap_or(default_address).parse()?;
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let database = env::var_os("WASTE_DB_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| root.join("data/campus-waste.sqlite3"));
+    let database = if railway {
+        let mount = env::var_os("RAILWAY_VOLUME_MOUNT_PATH")
+            .filter(|value| !value.is_empty())
+            .ok_or("Attach a persistent Railway volume before starting Campus Loop")?;
+        PathBuf::from(mount).join("campus-waste.sqlite3")
+    } else {
+        env::var_os("WASTE_DB_PATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| root.join("data/campus-waste.sqlite3"))
+    };
     if let Some(parent) = database
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
@@ -198,7 +259,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let web_root = env::var_os("WASTE_WEB_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join("frontend/dist"));
-    let state = AppState::open(&database, Vision::from_env()?, Analysis::from_env()?)?;
+    let state = AppState::open(
+        &database,
+        Vision::from_env()?,
+        Analysis::from_env()?,
+        access,
+    )?;
     let app = Router::new().nest("/api", api(state)).fallback_service(
         ServeDir::new(&web_root).fallback(ServeFile::new(web_root.join("index.html"))),
     );

@@ -27,6 +27,18 @@ cargo run --locked --manifest-path backend/Cargo.toml
 | `DEEPSEEK_MODEL` | 可选，默认为 `deepseek-flash` |
 | `WASTE_BIND` | 后端监听地址，默认为 `127.0.0.1:8080` |
 | `WASTE_DB_PATH` | SQLite 文件，默认为 `data/campus-waste.sqlite3`。独立演示可设为 `:memory:` |
+| `WASTE_ACCESS_KEY` | Railway 必填的组内口令。使用随机生成的 32–256 字节口令，本地可选 |
+
+## Railway 上线
+
+从仓库根目录部署一个服务即可。根目录的 Dockerfile 构建前端和 Rust 二进制。一个 Axum 进程同时服务网页和 `/api`。Railway 使用注入的 `PORT`，健康检查走 `/api/health`。
+
+1. 在免费工作区新建项目和一个空服务。给该服务挂载持久卷，挂载路径设为 `/data`。保持单实例，由 Railway 注入 `RAILWAY_VOLUME_MOUNT_PATH`。[Railway 挂载卷](https://docs.railway.com/volumes)
+2. 用密码管理器生成随机口令，添加为该服务的 `WASTE_ACCESS_KEY` 密封变量。需要在线建议时再添加 `DEEPSEEK_API_KEY`。需要实时识别时再添加 `TYPESAFE_API_KEY`。[Railway 服务变量](https://docs.railway.com/variables)
+3. 在服务设置里连接 `XiqingPeng/campus-waste-dispatch` 的 `main`。部署健康后，在 Networking 生成 HTTPS 域名。[Railway 服务来源](https://docs.railway.com/services)
+4. 用未登录的手机打开链接，核对投放、地图和本地规则分析。再用组内口令登录，模拟满桶并清运。在独立演示数据上重部署一次，确认工单仍然存在。
+
+Railway 将 SQLite 保存在挂载卷的 `campus-waste.sqlite3` 中。缺少卷或组内口令时，服务启动会报错。浏览、样例回放和规则统计可直接访问。设备上报、清运确认、重置和在线 AI 需要组内登录。口令单独发给队友，浏览器使用 HTTPS 会话 Cookie。
 
 ## 分工入口
 

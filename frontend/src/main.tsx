@@ -1,10 +1,12 @@
-import { Activity, ArrowDown, CircleAlert, Globe, MapPin, Recycle, RotateCcw, Settings2, Trash2, Truck, X } from 'lucide-react';
+import { Activity, ArrowDown, CircleAlert, Globe, KeyRound, LogOut, MapPin, Recycle, RotateCcw, Settings2, Trash2, Truck, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { errorText, useCampusState } from './api';
+import { accessRequiredEvent, errorText, request, useCampusState } from './api';
+import type { AccessStatus } from './api';
 import { Cleaner } from './cleaner';
 import { binLabels, categories, categoryOrder } from './domain';
 import type { BinStatus, Category, Snapshot, Station } from './domain';
+import { GroupAccess } from './group-access';
 import { Student } from './student';
 import { LocaleProvider, useLocale } from './locale';
 import './style.css';
@@ -19,12 +21,13 @@ function currentView(): View {
   return window.location.hash === '#cleaner' ? 'cleaner' : 'student';
 }
 
-function Simulator({ dialog, state, update, disabled, onReset }: {
+function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
   dialog: React.RefObject<HTMLDialogElement | null>;
   state: Snapshot | null;
   update: Mutation;
   disabled: boolean;
   onReset: () => void;
+  onLogout?: () => void;
 }) {
   const [stationId, setStationId] = useState('a');
   const [category, setCategory] = useState<Category>('recycle');
@@ -105,6 +108,7 @@ function Simulator({ dialog, state, update, disabled, onReset }: {
         <div className="sim-footer">
           <button className="outline" onClick={() => void reset()} disabled={disabled}><RotateCcw size={16} /> {t('重置演示数据')}</button>
           <p>{t('清空演示工单，恢复全部示范桶位。')}</p>
+          {onLogout && <button className="outline" onClick={onLogout}><LogOut size={16} /> {t('退出组内访问')}</button>}
         </div>
       </div>
     </dialog>
@@ -117,9 +121,12 @@ function App() {
   const [stationId, setStationId] = useState('a');
   const [notice, setNotice] = useState('');
   const [studentVersion, setStudentVersion] = useState(0);
+  const [access, setAccess] = useState<AccessStatus | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const accessDialog = useRef<HTMLDialogElement>(null);
   const { snapshot, connected, busy, loadError, update } = useCampusState();
   const station = snapshot?.stations.find((item) => item.id === stationId) ?? snapshot?.stations[0];
+  const locked = access?.required && !access.signed_in;
 
   useEffect(() => {
     const onHash = () => {
@@ -131,8 +138,39 @@ function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    void request<AccessStatus>('/api/access').then((status) => {
+      if (mounted) setAccess((current) => current ?? status);
+    }).catch(() => {});
+    const showAccess = () => {
+      setAccess({ required: true, signed_in: false });
+      dialog.current?.close();
+      accessDialog.current?.showModal();
+    };
+    window.addEventListener(accessRequiredEvent, showAccess);
+    return () => {
+      mounted = false;
+      window.removeEventListener(accessRequiredEvent, showAccess);
+    };
+  }, []);
+
+  async function logout() {
+    try {
+      setAccess(await request<AccessStatus>('/api/access/logout', {}));
+      dialog.current?.close();
+    } catch (cause) {
+      dialog.current?.close();
+      setNotice(errorText(cause));
+    }
+  }
+
   async function collect(id: number) {
     setNotice('');
+    if (locked) {
+      accessDialog.current?.showModal();
+      return;
+    }
     try {
       await update('/api/tickets/' + id + '/collect');
     } catch (cause) {
@@ -166,8 +204,8 @@ function App() {
               </select>
               <ArrowDown className="select-arrow" size={12} aria-hidden />
             </label>
-            <button className="outline sim-trigger" onClick={() => dialog.current?.showModal()}>
-              <Settings2 size={17} /> <span>{t('设备模拟器')}</span>
+            <button className="outline sim-trigger" onClick={() => (locked ? accessDialog : dialog).current?.showModal()}>
+              {locked ? <KeyRound size={17} /> : <Settings2 size={17} />} <span>{t(locked ? '组内登录' : '设备模拟器')}</span>
             </button>
           </div>
         </div>
@@ -206,7 +244,9 @@ function App() {
         {view === 'cleaner' && <Cleaner state={snapshot} connected={connected} busy={busy} onCollect={(id) => void collect(id)} />}
       </main>
 
-      <Simulator dialog={dialog} state={snapshot} update={update} disabled={busy || !connected} onReset={() => {
+      <GroupAccess dialog={accessDialog} onLogin={setAccess} />
+      <Simulator dialog={dialog} state={snapshot} update={update} disabled={busy || !connected}
+        onLogout={access?.required && access.signed_in ? () => void logout() : undefined} onReset={() => {
         setStudentVersion((version) => version + 1);
         setStationId('a');
         setNotice('');

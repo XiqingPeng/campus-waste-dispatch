@@ -36,6 +36,12 @@ pub struct Recognize {
     sample: Option<Sample>,
 }
 
+impl Recognize {
+    pub fn is_live(&self) -> bool {
+        matches!(self.mode, Mode::Live)
+    }
+}
+
 #[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Item {

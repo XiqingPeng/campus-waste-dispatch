@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Snapshot } from './domain';
 
+export const accessRequiredEvent = 'campus-group-access-required';
+
+export type AccessStatus = { required: boolean; signed_in: boolean };
+
 export async function request<T>(path: string, payload?: unknown): Promise<T> {
   const response = await fetch(path, {
     cache: 'no-store',
@@ -13,6 +17,9 @@ export async function request<T>(path: string, payload?: unknown): Promise<T> {
   });
 
   if (!response.ok) {
+    if (response.status === 401 && path !== '/api/access') {
+      window.dispatchEvent(new Event(accessRequiredEvent));
+    }
     const info = await response.json().catch(() => ({})) as { error?: string };
     throw new Error(info.error || '服务暂时不可用，请重试。');
   }
@@ -50,7 +57,7 @@ export function useCampusState() {
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       const version = epoch.current;
-      if (!updating.current) {
+      if (document.visibilityState === 'visible' && !updating.current) {
         try {
           const data = await requestSnapshot('/api/state');
           if (alive && epoch.current === version) {
