@@ -534,3 +534,152 @@ async fn shared_model_configuration_requires_sign_in_and_never_exposes_secrets()
     let preview = send(&app, "GET", "/api/analysis?days=7", Value::Null).await;
     assert!(!preview.to_string().contains("test-secret-key"));
 }
+
+#[tokio::test]
+async fn simulated_connectivity_preserves_tickets_and_supports_bulk_control() {
+    let locked = test_app_with_access(Access::configured(
+        "test-only-not-a-production-passcode",
+        true,
+    ));
+    assert_eq!(
+        request(
+            &locked,
+            "POST",
+            "/api/demo/connectivity",
+            json!({"target":"all","online":true})
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let app = test_app();
+    let initial = send(&app, "GET", "/api/state", Value::Null).await;
+    let now = now_ms();
+    let full = send(
+        &app,
+        "POST",
+        "/api/sensor",
+        event("connectivity-full", "GZ-001", "full", now),
+    )
+    .await;
+    let ticket_id = full["tickets"][0]["id"].as_i64().unwrap();
+    let awaiting = send(
+        &app,
+        "POST",
+        &format!("/api/tickets/{ticket_id}/collect"),
+        json!({}),
+    )
+    .await;
+    let offline = send(
+        &app,
+        "POST",
+        "/api/demo/connectivity",
+        json!({"target":"GZ-001","online":false}),
+    )
+    .await;
+    assert_eq!(offline["tickets"], awaiting["tickets"]);
+    let bin = offline["bins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| b["id"] == "GZ-001")
+        .unwrap();
+    assert_eq!(bin["simulated_offline"], true);
+    assert_eq!(bin["status"], "full");
+    assert!(!bin["received_at"].is_null());
+    let all = send(
+        &app,
+        "POST",
+        "/api/demo/connectivity",
+        json!({"target":"all","online":true}),
+    )
+    .await;
+    assert_eq!(all["tickets"], awaiting["tickets"]);
+    let points: Vec<_> = all["bins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|b| b["id"].as_str().unwrap().starts_with("GZ-"))
+        .collect();
+    assert_eq!(points.len(), 50);
+    assert!(points.iter().all(|b| b["simulated_offline"] == false
+        && b["status"] != "unknown"
+        && b["received_at"].as_i64().unwrap() >= now));
+    assert_eq!(
+        points.iter().find(|b| b["id"] == "GZ-001").unwrap()["status"],
+        "full"
+    );
+    let original = |s: &Value| {
+        s["bins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|b| !b["id"].as_str().unwrap().starts_with("GZ-"))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(original(&all), original(&initial));
+    let off = send(
+        &app,
+        "POST",
+        "/api/demo/connectivity",
+        json!({"target":"all","online":false}),
+    )
+    .await;
+    assert_eq!(off["tickets"], awaiting["tickets"]);
+    assert_eq!(
+        off["bins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|b| b["simulated_offline"] == true)
+            .count(),
+        50
+    );
+    // Old/duplicate sensor packets cannot silently cancel an offline simulation.
+    let stale = send(
+        &app,
+        "POST",
+        "/api/sensor",
+        event("connectivity-stale", "GZ-001", "full", now - 1),
+    )
+    .await;
+    assert_eq!(
+        stale["bins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["id"] == "GZ-001")
+            .unwrap()["simulated_offline"],
+        true
+    );
+    let fresh = send(
+        &app,
+        "POST",
+        "/api/sensor",
+        event("connectivity-fresh", "GZ-001", "full", now_ms() + 1),
+    )
+    .await;
+    assert_eq!(
+        fresh["bins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["id"] == "GZ-001")
+            .unwrap()["simulated_offline"],
+        false
+    );
+    for target in ["a-food", "GZ-999", ""] {
+        assert_eq!(
+            request(
+                &app,
+                "POST",
+                "/api/demo/connectivity",
+                json!({"target":target,"online":true})
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+}

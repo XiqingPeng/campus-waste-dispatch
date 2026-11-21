@@ -121,6 +121,10 @@ fn api(state: AppState) -> Router {
         .route("/tickets/{id}/collect", post(collect))
         .route("/demo/reset", post(reset))
         .route(
+            "/demo/connectivity",
+            post(connectivity).layer(DefaultBodyLimit::max(1024)),
+        )
+        .route(
             "/analysis",
             get(analysis_preview)
                 .post(analyze)
@@ -179,6 +183,26 @@ async fn sensor(
     state.access.require(&headers)?;
     let Json(event) = input?;
     state.store.sensor(event, now_ms()).map(Json)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConnectivityInput {
+    target: String,
+    online: bool,
+}
+
+async fn connectivity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    input: Result<Json<ConnectivityInput>, JsonRejection>,
+) -> Result<Json<Snapshot>, ApiError> {
+    state.access.require(&headers)?;
+    let Json(input) = input?;
+    state
+        .store
+        .connectivity(&input.target, input.online, now_ms())
+        .map(Json)
 }
 
 async fn collect(

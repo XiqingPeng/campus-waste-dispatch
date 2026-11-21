@@ -136,6 +136,7 @@ pub struct Bin {
     status: String,
     observed_at: Option<i64>,
     received_at: Option<i64>,
+    simulated_offline: bool,
 }
 
 #[derive(Serialize)]
@@ -218,6 +219,16 @@ impl Store {
         if !has_received_at {
             migration.execute("ALTER TABLE bins ADD COLUMN received_at INTEGER", [])?;
         }
+        let has_simulated_offline: bool = migration.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('bins') WHERE name = 'simulated_offline')", [], |row| row.get(0)
+        )?;
+        if !has_simulated_offline {
+            migration.execute(
+                "ALTER TABLE bins ADD COLUMN simulated_offline INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+
         migration.commit()?;
         for station in STATIONS {
             for category in Category::ALL {
@@ -318,12 +329,38 @@ impl Store {
         })
     }
 
+    pub fn connectivity(&self, target: &str, online: bool, now: i64) -> Result<Snapshot, ApiError> {
+        self.update(|transaction| {
+            if target != "all" {
+                let exists: bool = transaction.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM bins WHERE id = ?1 AND id LIKE 'GZ-%')",
+                    [target],
+                    |row| row.get(0),
+                )?;
+                if !exists {
+                    return Err(ApiError::bad_request("请选择有效的校园点位。"));
+                }
+            }
+            // Connectivity controls do not create, close, or re-open collection tickets.
+            // A previously unknown bin starts with a simulated non-full reading.
+            transaction.execute(
+                "UPDATE bins SET simulated_offline = ?1,
+                    status = CASE WHEN ?2 AND status = 'unknown' THEN 'available' ELSE status END,
+                    observed_at = CASE WHEN ?2 AND status = 'unknown' THEN ?3 ELSE observed_at END,
+                    received_at = CASE WHEN ?2 THEN ?3 ELSE received_at END
+                 WHERE id LIKE 'GZ-%' AND (?4 = 'all' OR id = ?4)",
+                params![!online, online, now, target],
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn reset(&self) -> Result<Snapshot, ApiError> {
         self.update(|transaction| {
             transaction.execute_batch(
                 "DELETE FROM sensor_events;
                  DELETE FROM tickets;
-                 UPDATE bins SET status = CASE WHEN id LIKE 'GZ-%' THEN 'unknown' ELSE 'available' END, observed_at = NULL, received_at = NULL;",
+                 UPDATE bins SET status = CASE WHEN id LIKE 'GZ-%' THEN 'unknown' ELSE 'available' END, observed_at = NULL, received_at = NULL, simulated_offline = 0;",
             )?;
             Ok(())
         })
@@ -377,7 +414,7 @@ fn apply_sensor(
     }
 
     transaction.execute(
-        "UPDATE bins SET status = ?1, observed_at = ?2, received_at = CASE WHEN id LIKE 'GZ-%' THEN ?4 ELSE received_at END WHERE id = ?3",
+        "UPDATE bins SET simulated_offline = 0, status = ?1, observed_at = ?2, received_at = CASE WHEN id LIKE 'GZ-%' THEN ?4 ELSE received_at END WHERE id = ?3",
         params![status, event.observed_at, event.bin_id, now],
     )?;
     match event.status {
@@ -407,7 +444,7 @@ fn apply_sensor(
 
 fn snapshot(connection: &Connection) -> rusqlite::Result<Snapshot> {
     let mut statement = connection.prepare(
-        "SELECT id, station_id, category, status, observed_at, received_at FROM bins ORDER BY id",
+        "SELECT id, station_id, category, status, observed_at, received_at, simulated_offline FROM bins ORDER BY id",
     )?;
     let bins = statement
         .query_map([], |row| {
@@ -418,6 +455,7 @@ fn snapshot(connection: &Connection) -> rusqlite::Result<Snapshot> {
                 status: row.get(3)?,
                 observed_at: row.get(4)?,
                 received_at: row.get(5)?,
+                simulated_offline: row.get(6)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
