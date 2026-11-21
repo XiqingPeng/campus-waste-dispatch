@@ -44,7 +44,10 @@ export function deviceOnline(bin: Bin, now: number) {
 export function collectionState(snapshot: Snapshot | null): Snapshot | null {
   if (!snapshot?.collection_points) return null;
   const ids = new Set(snapshot.collection_points.map(point => point.station_id));
-  const bins = snapshot.bins.filter(bin => ids.has(bin.station_id));
+  const codes = new Map(snapshot.collection_points.map(point => [point.station_id, point.station_code ?? point.station_id]));
+  const bins = snapshot.bins.filter(bin => ids.has(bin.station_id)).map(bin => ({
+    ...bin, display_id: `${codes.get(bin.station_id)}-${bin.category}`,
+  }));
   const binIds = new Set(bins.map(bin => bin.id));
   const retiredIds = new Set(snapshot.retired_collection_points?.map(point => point.station_id));
   const retiredBins = snapshot.bins.filter(bin => retiredIds.has(bin.station_id));
@@ -52,7 +55,7 @@ export function collectionState(snapshot: Snapshot | null): Snapshot | null {
   return {
     ...snapshot,
     stations: snapshot.collection_points.map(point => ({
-      id: point.station_id, name: point.name, detail: point.zone, zone: point.zone,
+      id: point.station_id, code: point.station_code ?? point.station_id, name: point.name, detail: point.zone, zone: point.zone,
       x: point.map_x, y: point.map_y, map_x: point.map_x, map_y: point.map_y,
     })),
     bins,

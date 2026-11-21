@@ -112,13 +112,13 @@ export function CollectionMap({
                   left: `${(((point.map_x ?? 0) * baseMap.width - campusView.x) / campusView.width) * 100}%`,
                   top: `${(((point.map_y ?? 0) * baseMap.height - campusView.y) / campusView.height) * 100}%`,
                 }}
-                aria-label={`${point.id} ${text(point.name)} · ${label}`}
+                aria-label={`${point.code ?? point.id} ${text(point.name)} · ${label}`}
                 aria-pressed={selectedId === point.id}
-                title={`${point.id} ${text(point.name)} · ${label}`}
+                title={`${point.code ?? point.id} ${text(point.name)} · ${label}`}
                 onClick={() => onSelect(point.id)}
               >
                 <span className="point-dot" />
-                <span className="point-label">{point.id}</span>
+                <span className="point-label">{point.code ?? point.id}</span>
               </button>
             );
           })}
@@ -167,7 +167,7 @@ export function CollectionMap({
         {selected ? (
           <>
             <div className="detail-eyebrow">
-              {selected.id} · {text(selected.zone ?? '')}
+              {selected.code ?? selected.id} · {text(selected.zone ?? '')}
             </div>
             <strong>
               <MapPin size={17} />
@@ -180,7 +180,7 @@ export function CollectionMap({
                 const Icon = categories[category].icon;
                 return <article className={'station-bin-card ' + category} key={category}>
                   <h3><Icon size={17} />{t(categories[category].label)}</h3>
-                  <small>{bin?.id ?? '—'}</small>
+                  <small>{bin?.display_id ?? bin?.id ?? '—'}</small>
                   <div className="detail-facts"><span>{t('设备状态')}：{t(binLabels[bin?.status ?? 'unknown'])}</span><span>{t(bin && deviceOnline(bin, now) ? '设备在线' : '离线或未知')}</span></div>
                   <p>{t('最近有效上报')}：{time(bin?.received_at)}</p>
                   <p>{ticket ? `#${ticket.id} · ${t(overdue(ticket, now) ? '超时待处理' : ticketLabels[ticket.status])}` : t('暂无进行中的工单')}</p>

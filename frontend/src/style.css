@@ -632,3 +632,10 @@ svg { flex: none; }
 .retired-records { border-top:1px solid var(--faint); padding:16px 0 0; margin-top:16px; }
 .retired-records summary { cursor:pointer; color:var(--muted); font-size:.85rem; }
 @media(max-width:420px) { .station-bin-grid { grid-template-columns:1fr; } }
+
+/* Keep queue filters aligned with generous spacing at every panel width. */
+.queue-filters { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; margin:20px 0 12px; }
+.queue-filters .operations-select { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; align-items:start; }
+.queue-filters select { width:100%; min-width:0; min-height:46px; padding:10px 36px 10px 14px; border-radius:8px; }
+.queue-filters select:focus-visible { outline:2px solid var(--ink); outline-offset:3px; }
+.station-filter-help { margin:0 0 18px; line-height:1.7; }

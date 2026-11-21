@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
 const english = {
+  "旧编号": "Legacy ID",
   "全校 {stations} 个站点 · {bins} 个分类垃圾桶": "{stations} campus stations \u00b7 {bins} sorting bins",
   "{count} 个站点 · 每站四类垃圾桶": "{count} stations \u00b7 Four bin categories per station",
   "垃圾桶类型": "Bin category",

@@ -63,7 +63,7 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
     setLocalMessage(null);
     try {
       await update('/api/demo/connectivity', { target: connectivityScope === 'all' ? 'all' : connectivityScope === 'station' ? station.id : bin.id, scope: connectivityScope === 'station' ? 'station' : 'bin', online });
-      setLocalMessage({ kind: 'connectivity', online, target: connectivityScope === 'all' ? t('全校 80 个垃圾桶') : connectivityScope === 'station' ? `${station.id} · ${t('本站四个垃圾桶')}` : `${bin.id} · ${t(categories[bin.category].label)}` });
+      setLocalMessage({ kind: 'connectivity', online, target: connectivityScope === 'all' ? t('全校 80 个垃圾桶') : connectivityScope === 'station' ? `${station.code ?? station.id} · ${t('本站四个垃圾桶')}` : `${bin.display_id ?? bin.id} · ${t(categories[bin.category].label)}` });
     } catch (cause) { setLocalMessage({ kind: 'error', message: errorText(cause) }); }
   }
 
@@ -102,7 +102,7 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
         </div>
         <div className="sim-fields">
           <label>{t('模拟站点')}<select value={station?.id ?? stationId} onChange={(event) => setStationId(event.currentTarget.value)}>
-            {state?.stations.map((item) => <option key={item.id} value={item.id}>{pointMode ? `${item.id} · ` : ''}{text(item.name)}</option>)}
+            {state?.stations.map((item) => <option key={item.id} value={item.id}>{pointMode ? `${item.code ?? item.id} · ` : ''}{text(item.name)}</option>)}
           </select></label>
           <label>{t('模拟桶位')}<select value={category} onChange={(event) => setCategory(event.currentTarget.value as Category)}>
             {categoryOrder.map((key) => <option key={key} value={key}>{t(categories[key].label)}</option>)}
