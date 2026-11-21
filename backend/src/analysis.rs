@@ -343,6 +343,68 @@ impl Analysis {
         })))
     }
 
+    pub fn credentials(&self) -> Option<crate::model_settings::Credentials> {
+        self.0.as_ref().map(|s| crate::model_settings::Credentials {
+            api_key: s.key.clone(),
+            model: s.model.clone(),
+        })
+    }
+
+    pub fn configured(
+        credentials: Option<crate::model_settings::Credentials>,
+    ) -> Result<Self, ApiError> {
+        let Some(credentials) = credentials else {
+            return Ok(Self::offline());
+        };
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(4))
+            .timeout(Duration::from_secs(18))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|_| ApiError::bad_request("无法初始化模型连接。"))?;
+        Ok(Self(Some(DeepSeek {
+            client,
+            key: credentials.api_key,
+            model: credentials.model,
+            endpoint: "https://api.deepseek.com/chat/completions".into(),
+        })))
+    }
+
+    pub async fn test_connection(&self) -> Result<(), ApiError> {
+        let service = self
+            .0
+            .as_ref()
+            .ok_or_else(|| ApiError::bad_request("请先填写 DeepSeek API Key。"))?;
+        let response = service.client.post(&service.endpoint).bearer_auth(&service.key)
+            .json(&json!({"model":service.model,"messages":[{"role":"user","content":"Return JSON: {\"ok\":true}"}],"response_format":{"type":"json_object"},"thinking":{"type":"disabled"},"max_tokens":32,"stream":false}))
+            .send().await.map_err(|_| ApiError::bad_request("连接 DeepSeek 失败或超时，请稍后重试。"))?;
+        if !response.status().is_success() {
+            let message = match response.status().as_u16() {
+                401 | 403 => "DeepSeek 拒绝访问，请检查 API Key 和模型权限。",
+                402 | 429 => "DeepSeek 余额不足或请求受限，请检查账户额度。",
+                400 | 404 | 422 => "DeepSeek 不支持此模型或请求格式，请检查模型名称。",
+                _ => "DeepSeek 服务暂不可用，请稍后重试。",
+            };
+            return Err(ApiError::bad_request(message));
+        }
+        let completion = response
+            .json::<Completion>()
+            .await
+            .map_err(|_| ApiError::bad_request("DeepSeek 返回格式异常，未通过连接测试。"))?;
+        let valid = completion
+            .choices
+            .first()
+            .and_then(|c| c.message.content.as_ref())
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .is_some_and(|v| v["ok"] == true);
+        if !valid {
+            return Err(ApiError::bad_request(
+                "DeepSeek 未返回有效测试结果，请检查模型名称。",
+            ));
+        }
+        Ok(())
+    }
+
     pub const fn offline() -> Self {
         Self(None)
     }
@@ -606,6 +668,41 @@ mod tests {
                 .evidence
                 .contains("20-minute threshold: 1")
         );
+        task.abort();
+    }
+    #[tokio::test]
+    async fn connection_test_checks_completion_and_sanitizes_provider_errors() {
+        use axum::{http::StatusCode, response::IntoResponse};
+        let app = Router::new().route("/chat/completions", post(|headers: HeaderMap, Json(payload): Json<Value>| async move {
+            assert_eq!(payload["max_tokens"], 32);
+            assert!(payload["messages"].to_string().contains("ok"));
+            assert!(!payload.to_string().contains("stats"));
+            if headers["authorization"] == "Bearer rejected-test-key" {
+                return (StatusCode::UNAUTHORIZED, Json(json!({"error":"rejected-test-key"}))).into_response();
+            }
+            Json(json!({"model":"deepseek-flash","choices":[{"finish_reason":"stop","message":{"content":"{\"ok\":true}"}}]})).into_response()
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/chat/completions", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let service = DeepSeek {
+            client: reqwest::Client::new(),
+            key: "test-key".into(),
+            model: "deepseek-flash".into(),
+            endpoint,
+        };
+        Analysis(Some(service.clone()))
+            .test_connection()
+            .await
+            .unwrap();
+        let bad = Analysis(Some(DeepSeek {
+            key: "rejected-test-key".into(),
+            ..service
+        }))
+        .test_connection()
+        .await
+        .unwrap_err();
+        assert!(!format!("{bad:?}").contains("rejected-test-key"));
         task.abort();
     }
 }

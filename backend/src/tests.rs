@@ -478,3 +478,59 @@ fn old_database_migrates_idempotently_without_resetting_existing_data() {
     }
     std::fs::remove_file(path).unwrap();
 }
+
+#[tokio::test]
+async fn shared_model_configuration_requires_sign_in_and_never_exposes_secrets() {
+    let locked = test_app_with_access(Access::configured(
+        "test-only-not-a-production-passcode",
+        true,
+    ));
+    for path in ["/api/model-config", "/api/model-config/test"] {
+        assert_eq!(
+            request(
+                &locked,
+                "POST",
+                path,
+                json!({"api_key":"test-secret-key","model":"deepseek-flash"})
+            )
+            .await
+            .0,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    assert_eq!(
+        request(&locked, "GET", "/api/model-config", Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let app = test_app();
+    assert_eq!(
+        send(&app, "GET", "/api/model-config", Value::Null).await["configured"],
+        false
+    );
+    let saved = send(
+        &app,
+        "POST",
+        "/api/model-config",
+        json!({"api_key":"test-secret-key","model":"deepseek-flash"}),
+    )
+    .await;
+    assert_eq!(saved["configured"], true);
+    assert!(!saved.to_string().contains("test-secret-key"));
+    let fetched = send(&app, "GET", "/api/model-config", Value::Null).await;
+    assert_eq!(fetched, saved);
+    send(
+        &app,
+        "POST",
+        "/api/model-config",
+        json!({"api_key":"","model":"another-model"}),
+    )
+    .await;
+    assert_eq!(
+        send(&app, "GET", "/api/model-config", Value::Null).await["model"],
+        "another-model"
+    );
+    let preview = send(&app, "GET", "/api/analysis?days=7", Value::Null).await;
+    assert!(!preview.to_string().contains("test-secret-key"));
+}
