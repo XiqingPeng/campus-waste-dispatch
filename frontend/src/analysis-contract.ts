@@ -1,40 +1,4 @@
-export const modelChoices = [
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'qwen', label: '通义千问（Qwen）' },
-  { value: 'openai', label: 'OpenAI' },
-] as const;
-export type ModelApi = 'none' | (typeof modelChoices)[number]['value'];
-export type ApiSettings = { statsModel: ModelApi; adviceModel: ModelApi };
-export const defaultSettings: ApiSettings = {
-  statsModel: 'none',
-  adviceModel: 'none',
-};
-// Reuse the storage key so legacy URLs are replaced by model selections.
-export const settingsKey = 'campus-loop.collection-apis.v1';
-function model(value: unknown): ModelApi {
-  return modelChoices.some((item) => item.value === value)
-    ? (value as ModelApi)
-    : 'none';
-}
-export function restoreSettings(value: string | null): ApiSettings {
-  try {
-    const raw = JSON.parse(value ?? '{}');
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw))
-      return { ...defaultSettings };
-    return {
-      statsModel: model(raw.statsModel),
-      adviceModel: model(
-        raw.adviceModel ??
-          (raw.adviceMode === 'deepseek' ? 'deepseek' : 'none'),
-      ),
-    };
-  } catch {
-    return { ...defaultSettings };
-  }
-}
-export function supportsAdvice(model: ModelApi) {
-  return model === 'none' || model === 'deepseek';
-}
+export type ModelApi = 'none' | 'deepseek';
 export type ZoneStat = {
   name: string;
   bin_count: number | null;

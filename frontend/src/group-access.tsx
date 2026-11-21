@@ -24,6 +24,7 @@ export function GroupAccess({ dialog, onLogin }: {
     try {
       const status = await request<AccessStatus>('/api/access', { passcode });
       onLogin(status);
+      window.dispatchEvent(new Event('campus-group-access-changed'));
       dialog.current?.close();
     } catch (cause) {
       setError(errorText(cause));
@@ -40,7 +41,7 @@ export function GroupAccess({ dialog, onLogin }: {
           <h2 id="access-title">{t('组内登录')}</h2>
           <button className="icon-button" type="button" aria-label={t('关闭登录')} onClick={() => dialog.current?.close()}><X size={20} /></button>
         </div>
-        <p className="access-note">{t('登录后可以操作设备、清运工单和使用在线模型。')}</p>
+        <p className="access-note">{t('登录后可以操作设备和清运工单；使用智能建议还需配置有效的 DeepSeek API Key。')}</p>
         <label className="access-field">
           {t('组内口令')}
           <input name="passcode" type="password" autoComplete="current-password" required maxLength={256} disabled={pending} />

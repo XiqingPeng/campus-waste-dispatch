@@ -1,17 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { BarChart3, Sparkles } from 'lucide-react';
 import { errorText } from './api';
+import { DeepSeekSettings } from './deepseek-settings';
 import { useLocale } from './locale';
-import {
-  defaultSettings,
-  modelChoices,
-  supportsAdvice,
-  generateAdvice,
-  loadStatistics,
-  restoreSettings,
-  settingsKey,
-} from './analysis-api';
-import type { Advice, ApiSettings, ModelApi, Statistics } from './analysis-api';
+import { generateAdvice, loadStatistics } from './analysis-api';
+import type { Advice, Statistics } from './analysis-api';
 
 export function DispatchAnalysis({
   connected,
@@ -22,22 +15,7 @@ export function DispatchAnalysis({
 }) {
   const { t, text, language } = useLocale();
   const [days, setDays] = useState<7 | 28>(7);
-  const [settings, setSettings] = useState<ApiSettings>(() => {
-    try {
-      return restoreSettings(localStorage.getItem(settingsKey));
-    } catch {
-      return { ...defaultSettings };
-    }
-  });
-  const [settingsError, setSettingsError] = useState(false);
-  useEffect(() => {
-    try {
-      localStorage.setItem(settingsKey, JSON.stringify(settings));
-      setSettingsError(false);
-    } catch {
-      setSettingsError(true);
-    }
-  }, [settings]);
+  const [configVersion, setConfigVersion] = useState(0);
   const [stats, setStats] = useState<{ key: string; data: Statistics } | null>(
     null,
   );
@@ -48,7 +26,7 @@ export function DispatchAnalysis({
     [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const serial = useRef(0);
-  const context = JSON.stringify([settings.adviceModel, days, language]);
+  const context = JSON.stringify([configVersion, days, language]);
   const currentContext = useRef(context);
   currentContext.current = context;
   const key = JSON.stringify([days, language, revision]);
@@ -90,14 +68,14 @@ export function DispatchAnalysis({
       serial.current++;
     };
   }, [connected, key]);
-  async function generate() {
+  async function generate(mode: 'none' | 'deepseek' = 'deepseek') {
     setGenerating(true);
     setError('');
     try {
       const data = await loadStatistics(days, language);
       if (!mounted.current || currentContext.current !== context) return;
       if (currentKey.current === key) setStats({ key, data });
-      const result = await generateAdvice(settings.adviceModel, data, language);
+      const result = await generateAdvice(mode, data, language);
       if (mounted.current && currentContext.current === context)
         setAdvice({ key: adviceKey, data: result });
     } catch (cause) {
@@ -131,7 +109,7 @@ export function DispatchAnalysis({
         </span>
         <div>
           <h2 id="analysis-title">{t('清运分析')}</h2>
-          <p>{t('分别选择用于统计解读和清运建议的模型 API。')}</p>
+          <p>{t('统计图表来自工单记录，智能建议由 DeepSeek 生成。')}</p>
         </div>
         <div className="analysis-controls">
           <div
@@ -153,64 +131,10 @@ export function DispatchAnalysis({
           </div>
         </div>
       </div>
-      <div className="model-api-choices">
-        {(['statsModel', 'adviceModel'] as const).map((field) => (
-          <div className="model-api-choice" key={field}>
-            <label htmlFor={field}>
-              {field === 'statsModel' ? (
-                <BarChart3 size={18} />
-              ) : (
-                <Sparkles size={18} />
-              )}
-              {t(
-                field === 'statsModel'
-                  ? '统计分析模型 API'
-                  : '智能建议模型 API',
-              )}
-            </label>
-            <select
-              id={field}
-              value={settings[field]}
-              disabled={generating}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  [field]: e.target.value as ModelApi,
-                })
-              }
-            >
-              <option value="none">{t('请选择模型')}</option>
-              {modelChoices.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {text(item.label)}
-                </option>
-              ))}
-            </select>
-            <p className="model-api-help">
-              {field === 'statsModel'
-                ? t(
-                    settings.statsModel === 'none'
-                      ? '用于解读趋势与分区差异。统计图表按工单记录展示。'
-                      : '已选择，模型解读待接入。统计图表按工单记录展示。',
-                  )
-                : t(
-                    settings.adviceModel === 'none'
-                      ? '用于生成清运建议。未选择时可查看系统基础建议。'
-                      : settings.adviceModel === 'deepseek'
-                        ? '生成建议前，需要完成模型配置并进行组内登录。'
-                        : '已选择，该模型待接入，暂不能生成建议。',
-                  )}
-            </p>
-          </div>
-        ))}
-      </div>
-      <p className="analysis-provenance" role="status">
-        {t(
-          settingsError
-            ? '本次选择未能保存，刷新后需重新选择。'
-            : '选择会自动保存在此浏览器。',
-        )}
-      </p>
+      <DeepSeekSettings
+        disabled={generating}
+        onSaved={() => setConfigVersion((v) => v + 1)}
+      />
       {error && (
         <p className="callout error" role="alert">
           {text(error)} {t('已有结果会保留，清运操作不受影响。')}
@@ -332,31 +256,27 @@ export function DispatchAnalysis({
       <section className="advice-section">
         <div className="subsection-heading">
           <h3>{t('智能建议')}</h3>
-          <button
-            className="primary"
-            disabled={
-              !connected ||
-              generating ||
-              loading ||
-              !supportsAdvice(settings.adviceModel)
-            }
-            onClick={() => void generate()}
-          >
-            <Sparkles size={17} />
-            {t(
-              generating
-                ? '正在分析…'
-                : settings.adviceModel === 'none'
-                  ? '查看基础建议'
-                  : '生成智能建议',
-            )}
-          </button>
+          <div className="deepseek-actions">
+            <button
+              className="outline"
+              disabled={!connected || generating || loading}
+              onClick={() => void generate('none')}
+            >
+              {t('查看基础建议')}
+            </button>
+            <button
+              className="primary"
+              disabled={!connected || generating || loading}
+              onClick={() => void generate()}
+            >
+              <Sparkles size={17} />
+              {t(generating ? '正在分析…' : '生成智能建议')}
+            </button>
+          </div>
         </div>
         <p className="analysis-provenance">
           {t(
-            settings.adviceModel === 'none'
-              ? '系统基础建议根据工单统计整理，不使用模型。'
-              : '模型建议基于汇总工单，仅作清运安排参考。',
+            '基础建议不调用模型。生成智能建议需要组内登录及有效的 DeepSeek 配置。',
           )}
         </p>
         {advice ? (
@@ -395,13 +315,7 @@ export function DispatchAnalysis({
             )}
           </>
         ) : (
-          <p className="analysis-empty">
-            {t(
-              !supportsAdvice(settings.adviceModel)
-                ? '所选模型尚未接入，可先选择其他模型。'
-                : '暂无建议，点击上方按钮生成。',
-            )}
-          </p>
+          <p className="analysis-empty">{t('暂无建议，点击上方按钮生成。')}</p>
         )}
       </section>
     </section>

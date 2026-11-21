@@ -1,7 +1,7 @@
 import { request } from './api';
 import type { Language } from './locale';
 export * from './analysis-contract';
-import { normalizeStats, supportsAdvice } from './analysis-contract';
+import { normalizeStats } from './analysis-contract';
 import type {
   ModelApi,
   Statistics,
@@ -54,8 +54,6 @@ export async function generateAdvice(
   stats: Statistics,
   language: Language,
 ): Promise<Advice> {
-  if (!supportsAdvice(model))
-    throw new Error('所选模型尚未接入，请先选择其他模型。');
   if (model === 'deepseek') {
     const report = await request<BackendReport>('/api/analysis', {
       days: stats.days,

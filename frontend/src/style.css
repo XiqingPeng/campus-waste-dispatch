@@ -594,3 +594,18 @@ svg { flex: none; }
 .model-api-choice select { width:100%; min-height:44px; background:var(--white); }
 .model-api-help { color:var(--muted); font-size:.82rem; line-height:1.65; margin:10px 0 0; }
 @media(max-width:780px) { .model-api-choices { grid-template-columns:minmax(0,1fr); } }
+
+/* Shared DeepSeek configuration. */
+.deepseek-settings { border:1px solid var(--faint); border-radius:8px; padding:18px; margin:20px 0; background:var(--surface); }
+.deepseek-settings-heading,.deepseek-config-status { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.deepseek-settings-heading h3 { display:flex; gap:8px; align-items:center; font-size:1rem; }
+.deepseek-settings-heading p,.deepseek-config-status { color:var(--muted); font-size:.82rem; margin-top:8px; }
+.deepseek-settings form { margin-top:18px; border-top:1px solid var(--faint); padding-top:12px; }
+.deepseek-settings fieldset { border:0; padding:0; margin:14px 0 0; min-width:0; }
+.deepseek-fields { display:grid; grid-template-columns:1.5fr 1fr; gap:16px; }
+.deepseek-fields label { display:grid; gap:8px; font-size:.85rem; min-width:0; }
+.deepseek-fields input { width:100%; min-height:44px; border:1px solid var(--faint); background:var(--white); color:var(--ink); border-radius:5px; padding:10px 12px; font:inherit; }
+.deepseek-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:12px; }
+.subsection-heading>.deepseek-actions { margin-top:0; }
+.deepseek-feedback { margin-top:14px; color:var(--accent-dark); font-size:.85rem; line-height:1.6; }
+@media(max-width:600px) { .deepseek-fields { grid-template-columns:1fr; } .deepseek-settings { padding:14px; } .subsection-heading { flex-wrap:wrap; } }
