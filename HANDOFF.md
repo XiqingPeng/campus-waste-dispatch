@@ -1,6 +1,6 @@
 # Campus Loop 开发交接
 
-Campus Loop 连接学生投放屏、桶位模拟器和保洁工作台。学生投放演示覆盖宿舍区 3 个模拟站点，每站 4 类桶；保洁工作台单独覆盖全校 50 个生活垃圾桶模拟点位（GZ-001～GZ-050）。校园地标参考港科大（广州）校方导览，站点位置和调度距离按课程场景设定。[校方地图](https://studyathkustgz.hkust-gz.edu.cn/detail-819)
+Campus Loop 连接学生投放屏、桶位模拟器和保洁工作台。学生投放演示覆盖宿舍区 3 个模拟站点，每站 4 类桶；保洁工作台单独覆盖全校 20 个模拟站点，每站四类垃圾桶，共 80 个桶。校园地标参考港科大（广州）校方导览，站点位置和调度距离按课程场景设定。[校方地图](https://studyathkustgz.hkust-gz.edu.cn/detail-819)
 
 ## 从 GitHub 跑起来
 
@@ -44,7 +44,7 @@ Railway 将 SQLite 保存在挂载卷的 `campus-waste.sqlite3` 中。缺少卷�
 
 | 可以并行的工作 | 入口 | 交付检查 |
 | --- | --- | --- |
-| 校园地图与交互 | `frontend/src/collection-map.tsx`、`cleaner.tsx`、`backend/data/collection-points.json` | 核对 50 点位、7 分区、地图与工单联动、未知设备与复核状态 |
+| 校园地图与交互 | `frontend/src/collection-map.tsx`、`cleaner.tsx`、`backend/data/collection-points.json` | 核对 20 站点、80 分类桶、7 分区、地图与工单联动、未知设备与复核状态 |
 | 设备与工单 | `backend/src/db.rs`、`main.rs` | 同一桶重复报满只保留一张活动工单。清运确认后收到新读数才改变复核状态 |
 | 识别与 AI 分析 | `backend/src/vision.rs`、`analysis.rs`、`frontend/src/dispatch-analysis.tsx` | 回放和实时来源有明确标识。建议旁展示服务端计算的依据 |
 | 仿真、报告和演示 | `evaluation/`、`scripts/verify_demo.py` | CSV 可复现。记录仿真输入、实际观察和仍待实测的主张 |
@@ -61,7 +61,7 @@ git switch -c feat/short-description
 
 | 接口 | 用途 |
 | --- | --- |
-| `GET /api/state` | 获取原分类站点、全部桶位与工单、推荐工单 ID，以及独立的 `collection_points` 50 点位目录 |
+| `GET /api/state` | 获取原分类站点、全部桶位与工单、推荐工单 ID，以及独立的 `collection_points` 20 站点目录及 `retired_collection_points` 旧目录 |
 | `GET /api/guidance?station_id=a&category=recycle` | 返回本站、替代站或等待 |
 | `POST /api/sensor` | 提交 `event_id`、`bin_id`、`status`、`observed_at`。状态为 `available`、`full` 或 `unknown`，时间为 Unix 毫秒 |
 | `POST /api/tickets/{id}/collect` | 确认清运并等待新采样。再次报满进入待复核，新的未满采样关闭工单 |
@@ -70,7 +70,7 @@ git switch -c feat/short-description
 | `POST /api/analysis` | 点击生成时提交 `days`、可选的 `lang`、`scope=collection`。支持 `zh-CN`（默认）和 `en`，返回对应语言的建议与证据 |
 | `POST /api/demo/reset` | 清空当前演示实例的事件和工单；原分类桶恢复可投放，GZ 清运点位恢复未知 |
 
-`scope` 默认 `sorting`（原分类桶），保洁页显式传 `collection`（50 点位）。分析按工单创建时间筛选最近 7 或 28 天。已关闭工单的耗时从开单算到未满读数。旧记录若缺关闭时间，仍计入工单数量。规则分析始终基于 SQLite 记录。有密钥且时段内有数据时，点击生成会将汇总统计交给 DeepSeek 撰写建议。
+`scope` 默认 `sorting`（原分类桶），保洁页显式传 `collection`（当前 20 站点的 80 桶）。分析按工单创建时间筛选最近 7 或 28 天。已关闭工单的耗时从开单算到未满读数。旧记录若缺关闭时间，仍计入工单数量。规则分析始终基于 SQLite 记录。有密钥且时段内有数据时，点击生成会将汇总统计交给 DeepSeek 撰写建议。
 
 ## 联调与交付
 
@@ -89,15 +89,17 @@ WASTE_BIND=127.0.0.1:8081 WASTE_DB_PATH=:memory: cargo run --locked --manifest-p
 python3 scripts/verify_demo.py --base-url http://127.0.0.1:8081
 ```
 
-学生端演示仍可识别空瓶、模拟 A 站可回收桶报满并观察改道。保洁端独立选择 GZ 点位上报满桶，地图和队列同步出现工单；确认清运后进入待设备复核，模拟器上报新的未满读数后关闭，计入今日完成和历史。两组数据在页面和分析中分开，避免 12 个分类桶混入 50 点位指标。
+学生端演示仍可识别空瓶、模拟 A 站可回收桶报满并观察改道。保洁端独立选择 GZ 点位上报满桶，地图和队列同步出现工单；确认清运后进入待设备复核，模拟器上报新的未满读数后关闭，计入今日完成和历史。两组数据在页面和分析中分开，避免 12 个分类桶混入 80 分类桶指标。
 
 当前已验证浏览器点位选择、异常筛选、分析显示、7/28 天统计、SQLite 工单流转及 DeepSeek 模拟服务的请求与响应。后续联调需补一次带密钥的 DeepSeek 实际请求和一次 Jev 实时识别，并记录所用模型、输入和返回结果。涉校内实测时，先核对宿舍实际桶身分类和步行距离。
 
-## 50 点位与在线状态
+## 20 站点、80 分类桶与在线状态
 
-目录按照实施文档的编号和分区：教学科研 16、饭堂 5、图书馆 3、演讲厅 3、宿舍 13、体育 4、行政/活动中心/入口 6。名称和底图坐标参考单文件 Demo，坐标为相对底图的 0～1 值，不用于路线或距离计算。底图来源和 OSM 署名见 `backend/data/README.md`。
+从原 50 点位按分区保留 20 个：教学科研 6、饭堂 2、图书馆 1、演讲厅 1、宿舍 5、体育 2、行政/活动中心/入口 3。清单见 `backend/data/README.md`。地图每站一个标记，汇总四类桶，优先超时、待清运、待复核、未知/离线、未满。点击可查看四类桶；站点与垃圾桶类型筛选联动工单和历史。每个桶独立上报和复核，分区统计按桶数计。
 
-启动时幂等新增 GZ-001～GZ-050，每点一个 residual 桶，初始状态 unknown。SQLite 自动补充 `received_at`，已有分类数据、历史工单与认证配置保留。原 12 个分类桶继续存在，因此原始 `/api/state` 有 62 个桶；前端按目录拆分两种视图。有效新上报的服务端接收时间用于在线判断：状态已知且最近 120 分钟内收到上报才计为在线；未知和从未上报不会伪装成未满。超时阈值为 20 分钟，待复核任务不计入待清运/超时卡片。
+启动时幂等新增分类桶，不删除原桶、事件或工单。保留站点的 residual 桶使用原 GZ 编号，其余三类用 GZ 编号加类别后缀。移除站点的旧工单仍可在“已移除站点记录”查阅，不进入当前指标和分析。全新数据库含 80 个保洁桶和 12 个学生桶，共 92 个；从旧版 50 桶数据库升级后另保留 30 个旧桶，共 122 个。按目录筛选，不可用 GZ 前缀统计当前设备数量。
+
+有效新上报的服务端接收时间用于在线判断：状态已知且最近 120 分钟内收到上报才计为在线；未知和从未上报不会伪装成未满。超时阈值为 20 分钟，待复核任务不计入待清运/超时卡片。
 
 ## DeepSeek 共享配置
 
@@ -113,4 +115,4 @@ python3 scripts/verify_demo.py --base-url http://127.0.0.1:8081
 
 ## 模拟点位在线控制
 
-保洁端设备模拟器支持当前点位“设为在线／设为离线”及全校 50 点位批量操作。`POST /api/demo/connectivity` 需要组内认证，JSON 为 `{ "target": "GZ-001" | "all", "online": true | false }`，只影响 GZ 点位。设置在线刷新 received_at，未知点位初始化为未满；设置离线保存独立 simulated_offline 标记，保留最后桶状态、上报时间与工单。连接切换本身不会创建、关闭或重开工单。新有效传感器上报自动恢复在线，过期／重复上报不取消离线设置。仍遵循 120 分钟无有效上报即离线的规则。SQLite 幂等增加字段，重启保留模拟状态；重置演示数据清除此标记。
+保洁端设备模拟器选择站点和桶类型后，可对当前垃圾桶、本站四个桶或全校 80 桶设置在线／离线。`POST /api/demo/connectivity` 需要组内认证：单桶 `{ "target": "GZ-001-food", "scope": "bin", "online": true }`；整站 `{ "target": "GZ-001", "scope": "station", "online": true }`；全校 `{ "target": "all", "online": true }`。scope 缺省为 bin；批量操作只影响当前 20 站点，保留旧桶不受影响。设置在线刷新 received_at，未知点位初始化为未满；设置离线保存独立 simulated_offline 标记，保留最后桶状态、上报时间与工单。连接切换本身不会创建、关闭或重开工单。新有效传感器上报自动恢复在线，过期／重复上报不取消离线设置。仍遵循 120 分钟无有效上报即离线的规则。SQLite 幂等增加字段，重启保留模拟状态；重置演示数据清除此标记。
