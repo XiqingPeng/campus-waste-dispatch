@@ -30,7 +30,7 @@ test('reused demo ticket IDs have distinct notification identities', () => {
 test('collection map and student sorting receive separate shared-state views', async () => {
   const {collectionState,sortingState}=await import('data:text/javascript;base64,'+Buffer.from(outputText).toString('base64'));
   const snapshot={stations:[{id:'a'}],bins:[{id:'a-food',station_id:'a'},{id:'GZ-017',station_id:'GZ-017'}],
-    tickets:[ticket,{...ticket,id:2,bin_id:'GZ-017'}],collection_points:[{bin_id:'GZ-017',name:'Canteen',zone:'Food',map_x:.4,map_y:.2}]};
+    tickets:[ticket,{...ticket,id:2,bin_id:'GZ-017'}],collection_points:[{station_id:'GZ-017',name:'Canteen',zone:'Food',map_x:.4,map_y:.2}]};
   assert.deepEqual(collectionState(snapshot).bins.map(bin=>bin.id),['GZ-017']);
   assert.deepEqual(sortingState(snapshot).tickets.map(t=>t.id),[1]);
   assert.equal(collectionState(snapshot).stations[0].map_x,.4);
@@ -43,4 +43,27 @@ test('online devices need a recent valid receipt and a known state',async()=>{
   assert.equal(deviceOnline(bin,1000+DEVICE_TIMEOUT_MS),false);
   assert.equal(deviceOnline({...bin,status:'unknown'},1000),false);
   assert.equal(deviceOnline({...bin,received_at:null},1000),false);
+});
+
+test('station marker prioritizes work across four bins and keeps retired records separate', async () => {
+  const {stationStatus,collectionState} = await import('data:text/javascript;base64,'+Buffer.from(outputText).toString('base64'));
+  const bins=['recycle','food','residual','hazard'].map(category=>({id:`GZ-001-${category}`,station_id:'GZ-001',category,status:'available',received_at:1_201_000}));
+  const base={stations:[],bins,tickets:[]};
+  assert.equal(stationStatus(base,'GZ-001',1_201_000),'available');
+  assert.equal(stationStatus({...base,bins:bins.slice(0,3)},'GZ-001',1_201_000),'unknown');
+  const offline={...base,bins:bins.map((bin,i)=>i?bin:{...bin,simulated_offline:true})};
+  assert.equal(stationStatus(offline,'GZ-001',1_201_000),'unknown');
+  const verify={...ticket,bin_id:bins[1].id,status:'awaiting_verify'};
+  assert.equal(stationStatus({...offline,tickets:[verify]},'GZ-001',1_201_000),'verify');
+  const pending={...ticket,id:2,bin_id:bins[2].id,opened_at:1_200_000};
+  assert.equal(stationStatus({...offline,tickets:[verify,pending]},'GZ-001',1_201_000),'full');
+  const late={...ticket,id:3,bin_id:bins[3].id};
+  assert.equal(stationStatus({...offline,tickets:[verify,pending,late]},'GZ-001',1_201_000),'overdue');
+  const retired={id:'GZ-002',station_id:'GZ-002'};
+  const retiredTicket={...ticket,id:4,bin_id:'GZ-002'};
+  const view=collectionState({...base,bins:[...bins,retired],tickets:[pending,retiredTicket],collection_points:[{station_id:'GZ-001'}],retired_collection_points:[{station_id:'GZ-002'}]});
+  assert.equal(view.stations.length,1);
+  assert.equal(view.bins.length,4);
+  assert.deepEqual(view.tickets,[pending]);
+  assert.deepEqual(view.retired_tickets,[retiredTicket]);
 });
