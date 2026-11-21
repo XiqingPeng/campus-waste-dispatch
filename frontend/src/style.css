@@ -609,3 +609,15 @@ svg { flex: none; }
 .subsection-heading>.deepseek-actions { margin-top:0; }
 .deepseek-feedback { margin-top:14px; color:var(--accent-dark); font-size:.85rem; line-height:1.6; }
 @media(max-width:600px) { .deepseek-fields { grid-template-columns:1fr; } .deepseek-settings { padding:14px; } .subsection-heading { flex-wrap:wrap; } }
+
+.sim-connectivity { padding:15px; margin-top:16px; border:1px solid var(--faint); border-radius:7px; background:var(--surface); }
+.sim-connectivity-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+.sim-connectivity-heading h3 { font-size:.95rem; }
+.sim-connectivity-heading span,.sim-current-connectivity { font-size:.82rem; color:var(--muted); }
+.sim-current-connectivity { margin:12px 0; }
+.sim-current-connectivity .is-online { color:var(--accent-dark); }
+.sim-connectivity-help { font-size:.77rem; color:var(--muted); line-height:1.6; margin:10px 0; }
+.sim-bulk-connectivity { border-top:1px solid var(--faint); padding-top:12px; }
+@media(max-width:420px) { .sim-bulk-connectivity { grid-template-columns:1fr; } }
+
+.sim-fields.single { grid-template-columns:minmax(0,1fr); }

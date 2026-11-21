@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { accessRequiredEvent, errorText, request, useCampusState } from './api';
 import type { AccessStatus } from './api';
 import { Cleaner } from './cleaner';
-import { collectionState, sortingState } from './cleaner-model';
+import { collectionState, sortingState, deviceOnline } from './cleaner-model';
 import { binLabels, categories, categoryOrder } from './domain';
 import type { BinStatus, Category, Snapshot, Station } from './domain';
 import { GroupAccess } from './group-access';
@@ -17,6 +17,7 @@ type Mutation = (path: string, payload?: unknown) => Promise<Snapshot>;
 type SimulatorMessage =
   | { kind: 'reported'; station: Station; category: Category; status: BinStatus }
   | { kind: 'reset' }
+  | { kind: 'connectivity'; online: boolean; target: string }
   | { kind: 'error'; message: string };
 function currentView(): View {
   return window.location.hash === '#cleaner' ? 'cleaner' : 'student';
@@ -56,6 +57,15 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
     }
   }
 
+  async function setConnectivity(online: boolean, all = false) {
+    if (!bin || !station || !pointMode) return;
+    setLocalMessage(null);
+    try {
+      await update('/api/demo/connectivity', { target: all ? 'all' : bin.id, online });
+      setLocalMessage({ kind: 'connectivity', online, target: all ? t('全校 50 个点位') : `${bin.id} · ${text(station.name)}` });
+    } catch (cause) { setLocalMessage({ kind: 'error', message: errorText(cause) }); }
+  }
+
   async function reset() {
     setLocalMessage(null);
     try {
@@ -76,6 +86,7 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
         category: t(categories[localMessage.category].label),
         status: t(binLabels[localMessage.status]),
       })
+    : localMessage?.kind === 'connectivity' ? t(localMessage.online ? '已将{target}设为在线。' : '已将{target}设为离线。', { target: localMessage.target })
     : localMessage?.kind === 'reset' ? t('演示数据已复位。') : text(localMessage?.message ?? '');
 
   return (
@@ -88,7 +99,7 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
           <div><h2 id="sim-title">{t('设备模拟器')}</h2><p>{t('向后端上报模拟红外状态')}</p></div>
           <button className="icon-button" aria-label={t('关闭模拟器')} onClick={() => dialog.current?.close()}><X size={22} /></button>
         </div>
-        <div className="sim-fields">
+        <div className={'sim-fields' + (pointMode ? ' single' : '')}>
           <label>{t('模拟站点')}<select value={station?.id ?? stationId} onChange={(event) => setStationId(event.currentTarget.value)}>
             {state?.stations.map((item) => <option key={item.id} value={item.id}>{pointMode ? `${item.id} · ` : ''}{text(item.name)}</option>)}
           </select></label>
@@ -96,6 +107,19 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
             {categoryOrder.map((key) => <option key={key} value={key}>{t(categories[key].label)}</option>)}
           </select></label>}
         </div>
+        {pointMode && <section className="sim-connectivity" aria-labelledby="sim-connectivity-title">
+          <div className="sim-connectivity-heading"><h3 id="sim-connectivity-title">{t('设备在线情况')}</h3><span>{t('全校在线 {online} / {total}', { online: state?.bins.filter(item => deviceOnline(item, Date.now())).length ?? 0, total: state?.bins.length ?? 50 })}</span></div>
+          <p className="sim-current-connectivity">{t('当前点位')}：<strong className={bin && deviceOnline(bin, Date.now()) ? 'is-online' : ''}>{t(bin && deviceOnline(bin, Date.now()) ? '在线' : '离线或未知')}</strong></p>
+          <div className="sim-actions" role="group" aria-label={t('当前点位在线设置')}>
+            <button className="outline" onClick={() => void setConnectivity(true)} disabled={disabled || !bin}>{t('设为在线')}</button>
+            <button className="outline" onClick={() => void setConnectivity(false)} disabled={disabled || !bin}>{t('设为离线')}</button>
+          </div>
+          <p className="sim-connectivity-help">{t('设为在线会刷新模拟上报时间；未知点位初始化为未满。设为离线保留桶状态和工单。两小时无新上报仍会离线。')}</p>
+          <div className="sim-actions sim-bulk-connectivity" role="group" aria-label={t('全校点位在线设置')}>
+            <button className="outline" onClick={() => void setConnectivity(true, true)} disabled={disabled || !state}>{t('全校 50 点位全部在线')}</button>
+            <button className="outline" onClick={() => void setConnectivity(false, true)} disabled={disabled || !state}>{t('全校 50 点位全部离线')}</button>
+          </div>
+        </section>}
         <div className="sim-observation">
           <span>{t('后端当前状态')}</span>
           <strong className={bin?.status === 'full' ? 'warn-text' : ''}>{t(binLabels[bin?.status ?? 'unknown'])}</strong>
@@ -104,7 +128,7 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
           <button className="primary" onClick={() => void report('full')} disabled={disabled || !bin}><Activity size={18} /> {t('上报已满')}</button>
           <button className="outline" onClick={() => void report('full')} disabled={disabled || !bin || lastFull !== bin.id}>{t('再次上报已满')}</button>
           <button className="outline" onClick={() => void report('available')} disabled={disabled || !bin}>{t('上报未满')}</button>
-          <button className="outline" onClick={() => void report('unknown')} disabled={disabled || !bin}>{t('模拟设备离线')}</button>
+          {!pointMode && <button className="outline" onClick={() => void report('unknown')} disabled={disabled || !bin}>{t('模拟设备离线')}</button>}
         </div>
         <div className={'sim-feedback' + (localMessage?.kind === 'error' ? ' error' : '')} role="status">{feedback}</div>
         <div className="sim-footer">

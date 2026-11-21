@@ -2,6 +2,22 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
 const english = {
+  "全校 50 个点位": "All 50 campus locations",
+  "已将{target}设为在线。": "Set {target} online.",
+  "已将{target}设为离线。": "Set {target} offline.",
+  "设备在线情况": "Device connectivity",
+  "全校在线 {online} / {total}": "Campus online {online} / {total}",
+  "当前点位": "Current location",
+  "在线": "Online",
+  "当前点位在线设置": "Current location connectivity",
+  "设为在线": "Set online",
+  "设为离线": "Set offline",
+  "设为在线会刷新模拟上报时间；未知点位初始化为未满。设为离线保留桶状态和工单。两小时无新上报仍会离线。": "Setting online refreshes the simulated report time; unknown bins start as non-full. Setting offline preserves bin states and tickets. No new report for two hours still means offline.",
+  "全校点位在线设置": "Campus connectivity settings",
+  "全校 50 点位全部在线": "Set all 50 locations online",
+  "全校 50 点位全部离线": "Set all 50 locations offline",
+  "请选择有效的校园点位。": "Select a valid campus location.",
+
   "DeepSeek 配置": "DeepSeek configuration",
   "组内共享，配置一次即可在手机和电脑上使用。": "Shared with your team. Configure once for phones and computers.",
   "收起配置": "Hide configuration",

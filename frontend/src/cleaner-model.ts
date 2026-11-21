@@ -34,6 +34,7 @@ export function eventKey(ticket: Ticket) {
 export const DEVICE_TIMEOUT_MS = 120 * 60_000;
 export function deviceOnline(bin: Bin, now: number) {
   return (
+    !bin.simulated_offline &&
     bin.status !== 'unknown' &&
     bin.received_at != null &&
     now - bin.received_at >= 0 &&
