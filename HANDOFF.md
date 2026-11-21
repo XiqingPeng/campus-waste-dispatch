@@ -99,10 +99,14 @@ python3 scripts/verify_demo.py --base-url http://127.0.0.1:8081
 
 启动时幂等新增 GZ-001～GZ-050，每点一个 residual 桶，初始状态 unknown。SQLite 自动补充 `received_at`，已有分类数据、历史工单与认证配置保留。原 12 个分类桶继续存在，因此原始 `/api/state` 有 62 个桶；前端按目录拆分两种视图。有效新上报的服务端接收时间用于在线判断：状态已知且最近 120 分钟内收到上报才计为在线；未知和从未上报不会伪装成未满。超时阈值为 20 分钟，待复核任务不计入待清运/超时卡片。
 
-## 选择模型 API
+## DeepSeek 共享配置
 
-「清运分析」直接显示“统计分析模型 API”和“智能建议模型 API”两个下拉框，提供 DeepSeek、通义千问（Qwen）、OpenAI。选择后自动保存到当前浏览器，不再让操作人员填写接口地址、请求方法或 JSON 格式。
+「清运分析」只保留 DeepSeek，无服务商或 AI 选择下拉框。统计图表仍使用后端工单汇总；“查看基础建议”使用规则，“生成智能建议”调用 DeepSeek。
 
-统计指标始终来自现有工单汇总。统计分析模型的选择预留用于后续模型解读，当前明确标注“待接入”，不伪造模型输出。智能建议未选择模型时可查看系统基础建议；DeepSeek 沿用已有服务端 DEEPSEEK_API_KEY、DEEPSEEK_MODEL 和组内登录，只有点击生成才调用。Qwen、OpenAI 当前仅保留选择，显示待接入并禁用生成按钮。
+组内登录后打开“配置 API”，填写 API Key 和模型名称。连接测试向官方 `https://api.deepseek.com/chat/completions` 发送一次最多 32 输出 token 的 JSON 请求，不含工单；成功仅表示当前填写内容通过测试，修改后需保存才生效。测试失败使用固定错误提示，不回传供应商原始错误或密钥。
 
-旧版浏览器设置中的自定义 URL 会被清理，旧 DeepSeek 选择可迁移。前端不保存密钥，也不再向用户填写的外部地址发送统计或建议请求。统计加载失败保留已有结果；模型选择、时间范围或工单变化后，旧建议标记为需要更新。
+保存后立即生效，所有已登录组员跨设备共享额度，并可更新配置。服务端仅返回 configured/model/source，绝不回显密钥；API Key 留空保留现有密钥。前端不将密钥写入 localStorage、sessionStorage 或 GitHub。
+
+配置保存在数据库同目录的 `deepseek-config.json`，Unix 权限 0600，采用临时文件加原子替换写入；Railway 上位于持久卷 `/data/`，部署重启后保留。该文件包含真实密钥，应按服务器秘密文件管理，已加入 Git 忽略且不进入 Docker 构建。它不是 Railway Variables 的修改：存在保存文件时优先使用文件，否则兼容 `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` 环境变量。组内口令 `WASTE_ACCESS_KEY` 不受影响。
+
+配置查询/保存/测试分别使用 `GET /api/model-config`、`POST /api/model-config`、`POST /api/model-config/test`，均要求组内认证。测试和生成会消耗提供方额度，不自动触发；没有有效密钥时不能声称模型可用。开发验证使用独立测试实例与模拟供应商，真实密钥需由用户在页面填写后测试。
