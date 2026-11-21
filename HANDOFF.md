@@ -40,6 +40,8 @@ cargo run --locked --manifest-path backend/Cargo.toml
 
 Railway 将 SQLite 保存在挂载卷的 `campus-waste.sqlite3` 中。缺少卷或组内口令时，服务启动会报错。浏览、样例回放和规则统计可直接访问。设备上报、清运确认、重置和在线 AI 需要组内登录。口令单独发给队友，浏览器使用 HTTPS 会话 Cookie。
 
+团队共享 Railway 生成的 HTTPS 链接。本机的 `127.0.0.1` 链接只在运行后端的电脑上有效。启用 JEV 后，先在 `/api/health` 查看 `live_vision` 是否为 `true`，再用组内口令登录、上传一张测试图片并确认结果标注为 `JEV 识别`。健康检查里的 `true` 表示运行进程已读取密钥。认证和网络状态以实际图片请求为准。
+
 ## 分工入口
 
 | 可以并行的工作 | 入口 | 交付检查 |

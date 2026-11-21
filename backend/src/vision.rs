@@ -168,13 +168,17 @@ impl TypeSafe {
             .await
             .map_err(|error| {
                 if error.is_timeout() {
+                    eprintln!("JEV: upstream request timed out");
                     ApiError::new(StatusCode::GATEWAY_TIMEOUT, "JEV 识别请求超时")
                 } else {
+                    eprintln!("JEV: upstream request could not be sent");
                     ApiError::new(StatusCode::BAD_GATEWAY, "无法连接 JEV 识别服务")
                 }
             })?;
-        if !response.status().is_success() {
-            return Err(match response.status().as_u16() {
+        let status = response.status();
+        if !status.is_success() {
+            eprintln!("JEV: upstream returned HTTP {}", status.as_u16());
+            return Err(match status.as_u16() {
                 401 | 403 => ApiError::new(
                     StatusCode::BAD_GATEWAY,
                     "JEV 拒绝了服务端鉴权，请检查密钥权限",
@@ -236,7 +240,7 @@ fn request_body(model: &str, format: &str, data: &str) -> Value {
         "questions": {
             "item": {
                 "type": "choice",
-                "instructions": "Identify the single waste item in the center of the photo, using only visible evidence. If it is unclear, out of scope, or there are multiple unseparated items, select uncertain.",
+                "instructions": "Identify the single waste item in the center of `photo`, using only visible evidence. If it is unclear, out of scope, or there are multiple unseparated items, select uncertain.",
                 "criteria": {
                     "bottle_clear": "An empty, recognizable beverage bottle with no visible residue, liquid, or mixed material that needs separating.",
                     "cup_unknown": "A disposable or takeaway drink cup without enough visual evidence to decide what contents remain or how to separate its components.",

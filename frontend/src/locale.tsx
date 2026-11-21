@@ -333,6 +333,7 @@ const english = {
   '当前待识别的物品': 'Item to identify',
   '摄像头实时画面': 'Live camera preview',
   'JEV 实时推理': 'Live JEV',
+  '实时 JEV 尚未启用，可先使用样例。': 'Live JEV is disabled. You can still try the examples.',
   '关闭摄像头': 'Close camera',
   '选择样例': 'Choose an example item',
   '把进度条拉到物品清楚的画面，再点击截帧识别。': 'Find a frame where the item is clear, then select Identify Frame.',

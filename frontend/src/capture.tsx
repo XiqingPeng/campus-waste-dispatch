@@ -41,6 +41,7 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
   const [input, setInput] = useState<Input>({ kind: 'sample', sample: 'bottle' });
   const [pending, setPending] = useState(false);
   const [openingCamera, setOpeningCamera] = useState(false);
+  const [liveConfigured, setLiveConfigured] = useState<boolean>();
   const [error, setError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -59,6 +60,16 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
     sequence.current += 1;
     releaseMedia();
   }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+    let active = true;
+    void request<{ live_vision: boolean }>('/api/health').then(
+      ({ live_vision }) => { if (active) setLiveConfigured(live_vision); },
+      () => { if (active) setLiveConfigured(undefined); },
+    );
+    return () => { active = false; };
+  }, [visible]);
 
   useEffect(() => {
     if (input.kind === 'camera' && video.current) video.current.srcObject = stream.current;
@@ -230,7 +241,7 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
           />
         )}
         {input.kind === 'camera' && <video ref={video} playsInline autoPlay muted aria-label={t('摄像头实时画面')} />}
-        {!sample && <span className="media-tag"><Video size={14} /> {t('JEV 实时推理')}</span>}
+        {!sample && liveConfigured === true && <span className="media-tag"><Video size={14} /> {t('JEV 实时推理')}</span>}
         {input.kind === 'camera' && (
           <button className="media-close" aria-label={t('关闭摄像头')} onClick={() => chooseSample('bottle')}><X size={16} /></button>
         )}
@@ -247,12 +258,15 @@ export function Capture({ onResult, visible }: { onResult: (result: Result | nul
             </button>
           ))}
         </div>
-      ) : (
+      ) : liveConfigured !== false && (
         <p className="media-note">
           {t(input.kind === 'video' ? '把进度条拉到物品清楚的画面，再点击截帧识别。' : '点击识别后，单张图像将发送至 JEV 接口。')}
         </p>
       )}
 
+      {liveConfigured === false && !error && (
+        <p className="media-note" role="status">{t('实时 JEV 尚未启用，可先使用样例。')}</p>
+      )}
       {error && <div className="callout error" role="status"><CircleAlert size={17} /><span>{text(error)}</span></div>}
       <button className="primary recognize" onClick={() => void recognize()} disabled={pending || openingCamera}>
         <ScanLine size={20} /> {t(pending ? '处理中…' : input.kind === 'video' || input.kind === 'camera' ? '截帧识别' : '识别图片')}
