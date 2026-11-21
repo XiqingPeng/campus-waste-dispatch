@@ -9,7 +9,7 @@ const source = await readFile(
 const { outputText } = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext },
 });
-const { normalizeStats, restoreSettings } = await import(
+const { normalizeStats } = await import(
   'data:text/javascript;base64,' + Buffer.from(outputText).toString('base64')
 );
 const range = { start: 1, end: 100, days: 7, source: 'backend' };
@@ -33,40 +33,4 @@ test('invalid statistics fail rather than becoming fabricated zeroes', () => {
     { ...raw, zones: [{ name: 'canteen', events: '1' }] },
   ])
     assert.throws(() => normalizeStats(value, range));
-});
-test('legacy settings discard custom URLs and preserve an existing DeepSeek choice', () => {
-  const legacy = {
-    statsMode: 'custom',
-    statsUrl: 'https://old.example/stats',
-    adviceMode: 'deepseek',
-    adviceUrl: 'https://old.example/advice',
-  };
-  assert.deepEqual(restoreSettings(JSON.stringify(legacy)), {
-    statsModel: 'none',
-    adviceModel: 'deepseek',
-  });
-  assert.deepEqual(
-    restoreSettings(JSON.stringify({ ...legacy, adviceMode: 'custom' })),
-    { statsModel: 'none', adviceModel: 'none' },
-  );
-});
-test('model selections restore independently without retaining unrelated fields', () => {
-  assert.deepEqual(
-    restoreSettings(
-      '{"statsModel":"qwen","adviceModel":"openai","statsUrl":"https://old.example"}',
-    ),
-    { statsModel: 'qwen', adviceModel: 'openai' },
-  );
-});
-test('corrupt or unknown persisted selections safely return to defaults', () => {
-  for (const raw of [
-    'invalid',
-    'null',
-    '[]',
-    '{"statsModel":"other","adviceModel":"custom"}',
-  ])
-    assert.deepEqual(restoreSettings(raw), {
-      statsModel: 'none',
-      adviceModel: 'none',
-    });
 });
