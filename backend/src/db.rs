@@ -53,8 +53,9 @@ const STATIONS: [Station; 3] = [
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct CollectionPoint {
-    pub(crate) bin_id: String,
+    pub(crate) station_id: String,
     pub(crate) name: String,
+    active: bool,
     pub(crate) zone: String,
     pub(crate) zone_key: String,
     building: String,
@@ -64,12 +65,31 @@ pub struct CollectionPoint {
     source_id: String,
 }
 
-pub fn collection_points() -> &'static [CollectionPoint] {
+fn collection_catalog() -> &'static [CollectionPoint] {
     static POINTS: OnceLock<Vec<CollectionPoint>> = OnceLock::new();
     POINTS.get_or_init(|| {
         serde_json::from_str(include_str!("../data/collection-points.json"))
-            .expect("valid collection point catalog")
+            .expect("valid collection station catalog")
     })
+}
+
+pub fn collection_points() -> Vec<CollectionPoint> {
+    collection_catalog()
+        .iter()
+        .filter(|p| p.active)
+        .cloned()
+        .collect()
+}
+
+impl CollectionPoint {
+    fn bin_id(&self, category: Category) -> String {
+        // Preserve the original residual bin ID and its history.
+        if matches!(category, Category::Residual) {
+            self.station_id.clone()
+        } else {
+            format!("{}-{}", self.station_id, category.as_str())
+        }
+    }
 }
 
 fn station(id: &str) -> Option<Station> {
@@ -155,6 +175,7 @@ pub struct Snapshot {
     pub(crate) stations: [Station; 3],
     recommendation: Option<i64>,
     pub(crate) collection_points: Vec<CollectionPoint>,
+    retired_collection_points: Vec<CollectionPoint>,
 }
 
 #[derive(Deserialize)]
@@ -241,7 +262,9 @@ impl Store {
             }
         }
         for point in collection_points() {
-            connection.execute("INSERT OR IGNORE INTO bins (id, station_id, category, status) VALUES (?1, ?1, 'residual', 'unknown')", [&point.bin_id])?;
+            for category in Category::ALL {
+                connection.execute("INSERT OR IGNORE INTO bins (id, station_id, category, status) VALUES (?1, ?2, ?3, 'unknown')", params![point.bin_id(category), point.station_id, category.as_str()])?;
+            }
         }
         Ok(Self(Mutex::new(connection)))
     }
@@ -329,28 +352,44 @@ impl Store {
         })
     }
 
-    pub fn connectivity(&self, target: &str, online: bool, now: i64) -> Result<Snapshot, ApiError> {
+    pub fn connectivity(
+        &self,
+        target: &str,
+        online: bool,
+        scope: &str,
+        now: i64,
+    ) -> Result<Snapshot, ApiError> {
+        if !matches!(scope, "bin" | "station") {
+            return Err(ApiError::bad_request("无效的在线设置范围。"));
+        }
+        let bin_ids: Vec<String> = collection_points()
+            .iter()
+            .flat_map(|point| {
+                Category::ALL.map(|category| (point.station_id.clone(), point.bin_id(category)))
+            })
+            .filter(|(station, bin)| {
+                target == "all"
+                    || if scope == "station" {
+                        station == target
+                    } else {
+                        bin == target
+                    }
+            })
+            .map(|(_, bin)| bin)
+            .collect();
+        if bin_ids.is_empty() {
+            return Err(ApiError::bad_request("请选择有效的校园点位。"));
+        }
         self.update(|transaction| {
-            if target != "all" {
-                let exists: bool = transaction.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM bins WHERE id = ?1 AND id LIKE 'GZ-%')",
-                    [target],
-                    |row| row.get(0),
-                )?;
-                if !exists {
-                    return Err(ApiError::bad_request("请选择有效的校园点位。"));
-                }
-            }
-            // Connectivity controls do not create, close, or re-open collection tickets.
-            // A previously unknown bin starts with a simulated non-full reading.
-            transaction.execute(
-                "UPDATE bins SET simulated_offline = ?1,
+            for id in &bin_ids {
+                transaction.execute(
+                    "UPDATE bins SET simulated_offline = ?1,
                     status = CASE WHEN ?2 AND status = 'unknown' THEN 'available' ELSE status END,
                     observed_at = CASE WHEN ?2 AND status = 'unknown' THEN ?3 ELSE observed_at END,
-                    received_at = CASE WHEN ?2 THEN ?3 ELSE received_at END
-                 WHERE id LIKE 'GZ-%' AND (?4 = 'all' OR id = ?4)",
-                params![!online, online, now, target],
-            )?;
+                    received_at = CASE WHEN ?2 THEN ?3 ELSE received_at END WHERE id = ?4",
+                    params![!online, online, now, id],
+                )?;
+            }
             Ok(())
         })
     }
@@ -508,7 +547,12 @@ fn snapshot(connection: &Connection) -> rusqlite::Result<Snapshot> {
         bins,
         tickets,
         stations: STATIONS,
-        collection_points: collection_points().to_vec(),
+        collection_points: collection_points(),
+        retired_collection_points: collection_catalog()
+            .iter()
+            .filter(|p| !p.active)
+            .cloned()
+            .collect(),
         recommendation,
     })
 }

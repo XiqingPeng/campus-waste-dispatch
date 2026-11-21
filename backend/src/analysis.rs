@@ -123,11 +123,11 @@ impl Stats {
         if matches!(scope, Scope::Collection) {
             for point in &snapshot.collection_points {
                 if let Some(zone) = stats.zones.iter_mut().find(|zone| zone.name == point.zone) {
-                    zone.bin_count += 1;
+                    zone.bin_count += 4;
                 } else {
                     stats.zones.push(ZoneStats {
                         name: point.zone.clone(),
-                        bin_count: 1,
+                        bin_count: 4,
                         events: 0,
                     });
                 }
@@ -138,7 +138,19 @@ impl Stats {
             .tickets
             .iter()
             .filter(|ticket| (start..=now).contains(&ticket.opened_at))
-            .filter(|ticket| ticket.bin_id.starts_with("GZ-") == matches!(scope, Scope::Collection))
+            .filter(|ticket| match scope {
+                Scope::Sorting => !ticket.bin_id.starts_with("GZ-"),
+                Scope::Collection => snapshot
+                    .bins
+                    .iter()
+                    .find(|b| b.id == ticket.bin_id)
+                    .is_some_and(|bin| {
+                        snapshot
+                            .collection_points
+                            .iter()
+                            .any(|p| p.station_id == bin.station_id)
+                    }),
+            })
         {
             let is_closed = ticket.status == "closed";
             stats.opened += 1;
@@ -154,16 +166,19 @@ impl Stats {
                             .iter()
                             .position(|station| station.id == bin.station_id)
                     }),
-                Scope::Collection => snapshot
-                    .collection_points
-                    .iter()
-                    .position(|point| point.bin_id == ticket.bin_id),
+                Scope::Collection => snapshot.collection_points.iter().position(|point| {
+                    snapshot
+                        .bins
+                        .iter()
+                        .any(|bin| bin.id == ticket.bin_id && bin.station_id == point.station_id)
+                }),
             };
-            if let Some(point) = snapshot
-                .collection_points
-                .iter()
-                .find(|point| point.bin_id == ticket.bin_id)
-            {
+            if let Some(point) = snapshot.collection_points.iter().find(|point| {
+                snapshot
+                    .bins
+                    .iter()
+                    .any(|bin| bin.id == ticket.bin_id && bin.station_id == point.station_id)
+            }) {
                 if let Some(zone) = stats.zones.iter_mut().find(|zone| zone.name == point.zone) {
                     zone.events += 1;
                 }

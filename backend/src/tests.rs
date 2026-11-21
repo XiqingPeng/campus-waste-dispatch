@@ -357,13 +357,15 @@ async fn collection_catalog_and_analysis_are_separate_from_sorting() {
     let app = test_app();
     let initial = send(&app, "GET", "/api/state", Value::Null).await;
     let points = initial["collection_points"].as_array().unwrap();
-    assert_eq!(points.len(), 50);
+    assert_eq!(points.len(), 20);
     let ids: std::collections::HashSet<_> = points
         .iter()
-        .map(|point| point["bin_id"].as_str().unwrap())
+        .map(|point| point["station_id"].as_str().unwrap())
         .collect();
-    assert_eq!(ids.len(), 50);
-    for number in 1..=50 {
+    assert_eq!(ids.len(), 20);
+    for number in [
+        1, 3, 5, 9, 11, 15, 17, 20, 22, 25, 28, 30, 32, 35, 39, 41, 43, 45, 47, 49,
+    ] {
         assert!(ids.contains(format!("GZ-{number:03}").as_str()));
     }
     for point in points {
@@ -372,11 +374,31 @@ async fn collection_catalog_and_analysis_are_separate_from_sorting() {
         }
     }
     let bins = initial["bins"].as_array().unwrap();
-    assert_eq!(bins.len(), 62);
+    assert_eq!(bins.len(), 92);
     assert!(
         bins.iter()
             .filter(|bin| bin["id"].as_str().unwrap().starts_with("GZ-"))
             .all(|bin| bin["status"] == "unknown" && bin["received_at"].is_null())
+    );
+    for station in &ids {
+        let categories: std::collections::HashSet<_> = bins
+            .iter()
+            .filter(|bin| bin["station_id"] == *station)
+            .map(|bin| bin["category"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            categories,
+            ["recycle", "food", "residual", "hazard"]
+                .into_iter()
+                .collect()
+        );
+    }
+    assert_eq!(
+        initial["retired_collection_points"]
+            .as_array()
+            .unwrap()
+            .len(),
+        30
     );
     let now = now_ms();
     send(
@@ -419,7 +441,7 @@ async fn collection_catalog_and_analysis_are_separate_from_sorting() {
             .iter()
             .map(|z| z["bin_count"].as_u64().unwrap())
             .sum::<u64>(),
-        50
+        80
     );
     assert_eq!(
         collection["stats"]["hourly"]
@@ -461,12 +483,35 @@ fn old_database_migrates_idempotently_without_resetting_existing_data() {
     {
         let connection = rusqlite::Connection::open(&path).unwrap();
         connection.execute_batch("CREATE TABLE bins(id TEXT PRIMARY KEY, station_id TEXT NOT NULL, category TEXT NOT NULL, status TEXT NOT NULL, observed_at INTEGER);
-            INSERT INTO bins VALUES ('a-recycle','a','recycle','full',1234);").unwrap();
+            INSERT INTO bins VALUES ('a-recycle','a','recycle','full',1234);
+            INSERT INTO bins VALUES ('GZ-002','GZ-002','residual','full',2345);").unwrap();
     }
     for _ in 0..2 {
         let store = crate::db::Store::open(&path).unwrap();
         let state = serde_json::to_value(store.snapshot().unwrap()).unwrap();
-        assert_eq!(state["bins"].as_array().unwrap().len(), 62);
+        assert_eq!(state["bins"].as_array().unwrap().len(), 93);
+        let retired = state["bins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["id"] == "GZ-002")
+            .unwrap();
+        assert_eq!(retired["status"], "full");
+        assert_eq!(retired["observed_at"], 2345);
+        assert!(
+            !state["collection_points"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p["station_id"] == "GZ-002")
+        );
+        assert!(
+            state["retired_collection_points"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p["station_id"] == "GZ-002")
+        );
         let original = state["bins"]
             .as_array()
             .unwrap()
@@ -601,7 +646,7 @@ async fn simulated_connectivity_preserves_tickets_and_supports_bulk_control() {
         .iter()
         .filter(|b| b["id"].as_str().unwrap().starts_with("GZ-"))
         .collect();
-    assert_eq!(points.len(), 50);
+    assert_eq!(points.len(), 80);
     assert!(points.iter().all(|b| b["simulated_offline"] == false
         && b["status"] != "unknown"
         && b["received_at"].as_i64().unwrap() >= now));
@@ -634,7 +679,7 @@ async fn simulated_connectivity_preserves_tickets_and_supports_bulk_control() {
             .iter()
             .filter(|b| b["simulated_offline"] == true)
             .count(),
-        50
+        80
     );
     // Old/duplicate sensor packets cannot silently cancel an offline simulation.
     let stale = send(
@@ -682,4 +727,197 @@ async fn simulated_connectivity_preserves_tickets_and_supports_bulk_control() {
             StatusCode::BAD_REQUEST
         );
     }
+}
+
+#[tokio::test]
+async fn four_bins_have_independent_tickets_and_station_connectivity() {
+    let app = test_app();
+    let now = now_ms();
+    for category in ["recycle", "food", "hazard"] {
+        let bin = format!("GZ-017-{category}");
+        send(
+            &app,
+            "POST",
+            "/api/sensor",
+            event(category, &bin, "full", now),
+        )
+        .await;
+    }
+    let full = send(
+        &app,
+        "POST",
+        "/api/sensor",
+        event("residual", "GZ-017", "full", now),
+    )
+    .await;
+    assert_eq!(full["tickets"].as_array().unwrap().len(), 4);
+    let one = send(
+        &app,
+        "POST",
+        "/api/demo/connectivity",
+        json!({"target":"GZ-017-food","online":false}),
+    )
+    .await;
+    assert_eq!(
+        one["bins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|b| b["simulated_offline"] == true)
+            .count(),
+        1
+    );
+    let station = send(
+        &app,
+        "POST",
+        "/api/demo/connectivity",
+        json!({"target":"GZ-017","scope":"station","online":false}),
+    )
+    .await;
+    assert_eq!(
+        station["bins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|b| b["simulated_offline"] == true)
+            .count(),
+        4
+    );
+    assert_eq!(station["tickets"], full["tickets"]);
+    send(
+        &app,
+        "POST",
+        "/api/demo/connectivity",
+        json!({"target":"GZ-017","scope":"station","online":true}),
+    )
+    .await;
+    let food = full["tickets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["bin_id"] == "GZ-017-food")
+        .unwrap();
+    send(
+        &app,
+        "POST",
+        &format!("/api/tickets/{}/collect", food["id"]),
+        json!({}),
+    )
+    .await;
+    let cleared = send(
+        &app,
+        "POST",
+        "/api/sensor",
+        event("food-clear", "GZ-017-food", "available", now_ms() + 1),
+    )
+    .await;
+    assert_eq!(
+        cleared["tickets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t["status"] == "closed")
+            .count(),
+        1
+    );
+    assert_eq!(
+        cleared["tickets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|t| t["status"] == "pending")
+            .count(),
+        3
+    );
+    let stats = send(
+        &app,
+        "GET",
+        "/api/analysis?days=7&scope=collection",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(stats["stats"]["opened"], 4);
+    assert_eq!(stats["stats"]["closed"], 1);
+    assert_eq!(
+        stats["stats"]["stations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s["opened"] == 4)
+            .count(),
+        1
+    );
+    assert_eq!(
+        request(
+            &app,
+            "POST",
+            "/api/demo/connectivity",
+            json!({"target":"GZ-017","scope":"invalid","online":true})
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+}
+
+#[tokio::test]
+async fn retired_station_history_survives_but_is_excluded_from_current_analysis_and_bulk_controls()
+{
+    let path = std::env::temp_dir().join(format!(
+        "campus-retired-{}-{}.sqlite3",
+        std::process::id(),
+        now_ms()
+    ));
+    {
+        let _store = crate::db::Store::open(&path).unwrap();
+    }
+    {
+        let db = rusqlite::Connection::open(&path).unwrap();
+        db.execute("INSERT INTO bins(id,station_id,category,status,observed_at) VALUES ('GZ-002','GZ-002','residual','full',1234)", []).unwrap();
+        db.execute(
+            "INSERT INTO tickets(bin_id,status,opened_at) VALUES ('GZ-002','pending',?1)",
+            [now_ms()],
+        )
+        .unwrap();
+    }
+    let app = Router::new().nest(
+        "/api",
+        api(AppState::open(
+            &path,
+            Vision::default(),
+            Analysis::offline(),
+            Access::default(),
+        )
+        .unwrap()),
+    );
+    let before = send(&app, "GET", "/api/state", Value::Null).await;
+    let after = send(
+        &app,
+        "POST",
+        "/api/demo/connectivity",
+        json!({"target":"all","online":true}),
+    )
+    .await;
+    assert_eq!(before["tickets"], after["tickets"]);
+    let find_retired = |state: &Value| {
+        state["bins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["id"] == "GZ-002")
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(find_retired(&before), find_retired(&after));
+    let stats = send(
+        &app,
+        "GET",
+        "/api/analysis?days=7&scope=collection",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(stats["stats"]["opened"], 0);
+    assert_eq!(stats["stats"]["stations"].as_array().unwrap().len(), 20);
+    drop(app);
+    std::fs::remove_file(path).unwrap();
 }

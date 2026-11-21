@@ -188,8 +188,14 @@ async fn sensor(
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ConnectivityInput {
+    #[serde(default = "connectivity_scope")]
+    scope: String,
     target: String,
     online: bool,
+}
+
+fn connectivity_scope() -> String {
+    "bin".into()
 }
 
 async fn connectivity(
@@ -201,7 +207,7 @@ async fn connectivity(
     let Json(input) = input?;
     state
         .store
-        .connectivity(&input.target, input.online, now_ms())
+        .connectivity(&input.target, input.online, &input.scope, now_ms())
         .map(Json)
 }
 
