@@ -195,7 +195,7 @@ export function DispatchAnalysis({
                     <thead>
                       <tr>
                         <th>{t('分区')}</th>
-                        <th>{t('点位数')}</th>
+                        <th>{t('垃圾桶数')}</th>
                         <th>{t('满桶工单')}</th>
                       </tr>
                     </thead>
@@ -241,7 +241,7 @@ export function DispatchAnalysis({
                 </details>
                 <p className="analysis-provenance">
                   {t(
-                    '没有事件的点位仍计入分区点位数；平均耗时只统计已关闭工单。',
+                    '每个站点含四类桶；分区数量按垃圾桶计，平均耗时只统计已关闭工单。',
                   )}
                 </p>
               </div>

@@ -2,6 +2,22 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
 const english = {
+  "全校 {stations} 个站点 · {bins} 个分类垃圾桶": "{stations} campus stations \u00b7 {bins} sorting bins",
+  "{count} 个站点 · 每站四类垃圾桶": "{count} stations \u00b7 Four bin categories per station",
+  "垃圾桶类型": "Bin category",
+  "全部四类垃圾桶": "All four bin categories",
+  "每站包含：可回收物、厨余垃圾、其他垃圾、有害垃圾。地图每站显示一个点。": "Each station has recyclable, food, residual and hazardous waste bins, shown as one map marker.",
+  "已移除站点记录": "Retired station records",
+  "旧站点工单保留供查阅，不计入当前站点地图、指标和分析。": "Retired station tickets remain available for reference and are excluded from the current map, metrics and analysis.",
+  "工单状态": "Ticket status",
+  "在线设置范围": "Connectivity scope",
+  "当前垃圾桶": "Selected bin",
+  "本站四个垃圾桶": "All four bins at this station",
+  "全校 80 个垃圾桶": "All 80 campus bins",
+  "垃圾桶数": "Bins",
+  "每个站点含四类桶；分区数量按垃圾桶计，平均耗时只统计已关闭工单。": "Each station has four bin categories. Zone totals count bins; mean duration includes closed tickets only.",
+  "无效的在线设置范围。": "Invalid connectivity scope.",
+
   "全校 50 个点位": "All 50 campus locations",
   "已将{target}设为在线。": "Set {target} online.",
   "已将{target}设为离线。": "Set {target} offline.",

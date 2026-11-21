@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bell, Check, ClipboardList, Clock3, History, ShieldCheck, TriangleAlert, Wifi, X } from 'lucide-react';
-import { binLabels, ticketLabels } from './domain';
-import type { Snapshot, Ticket } from './domain';
+import { binLabels, ticketLabels, categories, categoryOrder } from './domain';
+import type { Snapshot, Ticket, Category } from './domain';
 import { CollectionMap } from './collection-map';
 import { DispatchAnalysis } from './dispatch-analysis';
 import { useLocale } from './locale';
@@ -16,6 +16,7 @@ export function Cleaner({ state, connected, busy, lastUpdated, onCollect }: {
   const [now, setNow] = useState(Date.now);
   const [filter, setFilter] = useState<QueueFilter>('all');
   const [stationId, setStationId] = useState('all');
+  const [category, setCategory] = useState<Category | 'all'>('all');
   const [zone, setZone] = useState('all');
   const [activePanel, setActivePanel] = useState<'history'|'analysis'>('history');
   const [historyDate, setHistoryDate] = useState('');
@@ -51,7 +52,7 @@ export function Cleaner({ state, connected, busy, lastUpdated, onCollect }: {
   const binOf = (ticket: Ticket) => state?.bins.find((bin) => bin.id === ticket.bin_id);
   const matchesStation = (ticket: Ticket) => {
     const id=binOf(ticket)?.station_id;
-    return (stationId === 'all' || id === stationId) && (zone==='all' || state?.stations.find(point=>point.id===id)?.zone===zone);
+    return (category === 'all' || binOf(ticket)?.category === category) && (stationId === 'all' || id === stationId) && (zone==='all' || state?.stations.find(point=>point.id===id)?.zone===zone);
   };
   const queue = active.filter(matchesStation).filter((ticket) =>
     filter === 'overdue' ? overdue(ticket, now) : filter === 'verify' ? ticket.status === 'awaiting_verify' : true);
@@ -71,7 +72,7 @@ export function Cleaner({ state, connected, busy, lastUpdated, onCollect }: {
     <div className="cleaner-dashboard cleaner-v2">
       <div className="operations-overview">
       <div className="operations-context">
-        <span>{t('全校 {count} 个生活垃圾桶点位', { count: state?.bins.length ?? 0 })}</span>
+        <span>{t('全校 {stations} 个站点 · {bins} 个分类垃圾桶', { stations: state?.stations.length ?? 0, bins: state?.bins.length ?? 0 })}</span>
         <span className={connected ? 'sync-stamp' : 'sync-stamp stale'}>{t(connected ? '最近同步：{time}' : '数据可能过期 · 最近同步：{time}', { time: time(lastUpdated) })}</span>
       </div>
       <div className="operations-metrics">
@@ -79,7 +80,7 @@ export function Cleaner({ state, connected, busy, lastUpdated, onCollect }: {
           { label: '待清运', value: pending.length, icon: ClipboardList, tone: '' },
           { label: '超时待处理', value: late.length, icon: TriangleAlert, tone: 'warning' },
           { label: '今日已完成', value: today, icon: Check, tone: 'done' },
-          { label: '在线设备', value: connected ? `${online} / ${state?.bins.length ?? 50}` : '—', icon: Wifi, tone: 'verify' },
+          { label: '在线设备', value: connected ? `${online} / ${state?.bins.length ?? 80}` : '—', icon: Wifi, tone: 'verify' },
         ].map(({ label, value, icon: Icon, tone }) => (
           <div className={'operations-metric ' + tone} key={label}>
             <Icon size={20} /><span>{text(label)}</span><strong>{state ? value : '—'}</strong>
@@ -105,6 +106,13 @@ export function Cleaner({ state, connected, busy, lastUpdated, onCollect }: {
               {state?.stations.filter(point=>zone==='all'||point.zone===zone).map((station) => <option key={station.id} value={station.id}>{station.id} · {text(station.name)}</option>)}
             </select>
           </label>
+          <label className="operations-select">{t('垃圾桶类型')}
+            <select value={category} onChange={event => setCategory(event.target.value as Category | 'all')}>
+              <option value="all">{t('全部四类垃圾桶')}</option>
+              {categoryOrder.map(key => <option key={key} value={key}>{t(categories[key].label)}</option>)}
+            </select>
+          </label>
+          <p className="verification-note">{t('每站包含：可回收物、厨余垃圾、其他垃圾、有害垃圾。地图每站显示一个点。')}</p>
           <div className="queue-tabs" role="group" aria-label={t('工单筛选')}>
             {([['all', '全部进行中'], ['overdue', '超时待处理'], ['verify', '待传感器确认']] as const).map(([value, label]) =>
               <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{t(label)}</button>)}
@@ -119,7 +127,7 @@ export function Cleaner({ state, connected, busy, lastUpdated, onCollect }: {
               return <li className={'operation-ticket' + (isLate ? ' overdue' : '')} key={eventKey(ticket)} data-testid="ticket" data-ticket-status={ticket.status}>
                 <div className="operation-ticket-title"><strong>{text(station?.name ?? bin.station_id)}</strong>
                   <span className={'status-chip ' + (isLate ? 'overdue' : '')}>{t(isLate ? '超时待处理' : ticketLabels[ticket.status])}</span></div>
-                <div className="ticket-identifiers">{bin.id} · #{ticket.id}</div>
+                <div className="ticket-identifiers">{t(categories[bin.category].label)} · {bin.id} · #{ticket.id}</div>
                 <dl className="ticket-times"><div><dt>{t('首次检测满桶')}</dt><dd>{time(ticket.opened_at)}</dd></div>
                   <div><dt>{t(ticket.status === 'awaiting_verify' ? '事件持续时间' : '已等待')}</dt><dd>{duration(ticket.opened_at)}</dd></div></dl>
                 <div className="operation-ticket-footer"><span>{t('设备状态')}：{t(deviceOnline(bin,now)?binLabels[bin.status]:'离线或未知')}</span>
@@ -147,10 +155,20 @@ export function Cleaner({ state, connected, busy, lastUpdated, onCollect }: {
           <tbody>{history.map((ticket) => {
             const bin = binOf(ticket);
             const station = state?.stations.find((item) => item.id === bin?.station_id);
-            return <tr key={eventKey(ticket)}><td><strong>{text(station?.name ?? ticket.bin_id)}</strong><small>{ticket.bin_id} · #{ticket.id}</small></td>
+            return <tr key={eventKey(ticket)}><td><strong>{text(station?.name ?? ticket.bin_id)}</strong><small>{bin ? t(categories[bin.category].label) : ''} · {ticket.bin_id} · #{ticket.id}</small></td>
               <td>{time(ticket.opened_at)}</td><td>{time(ticket.closed_at)}</td><td>{ticket.closed_at == null ? '—' : duration(ticket.opened_at, ticket.closed_at)}</td></tr>;
           })}</tbody>
         </table></div> : <div className="queue-empty">{t('当前筛选下暂无已完成记录')}</div>}
+        {!!state?.retired_tickets?.length && <details className="retired-records">
+          <summary>{t('已移除站点记录')} · {state.retired_tickets.length}</summary>
+          <p className="verification-note">{t('旧站点工单保留供查阅，不计入当前站点地图、指标和分析。')}</p>
+          <div className="history-scroll"><table className="history-table"><thead><tr><th>{t('站点筛选')}</th><th>{t('工单状态')}</th><th>{t('首次检测满桶')}</th><th>{t('复核完成时间')}</th></tr></thead>
+          <tbody>{state.retired_tickets.map(ticket => {
+            const bin = state.retired_bins?.find(bin => bin.id === ticket.bin_id);
+            const point = state.retired_collection_points?.find(point => point.station_id === bin?.station_id);
+            return <tr key={eventKey(ticket)}><td><strong>{text(point?.name ?? ticket.bin_id)}</strong><small>{ticket.bin_id} · #{ticket.id}</small></td><td>{t(ticketLabels[ticket.status])}</td><td>{time(ticket.opened_at)}</td><td>{time(ticket.closed_at)}</td></tr>;
+          })}</tbody></table></div>
+        </details>}
       </div>
       <div id="panel-analysis" role="tabpanel" aria-labelledby="tab-analysis" hidden={activePanel!=='analysis'}><DispatchAnalysis connected={connected} revision={revision} /></div>
       </section>

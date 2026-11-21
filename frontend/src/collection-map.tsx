@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Minus, Plus, MapPin } from 'lucide-react';
 import type { Snapshot } from './domain';
-import { binLabels, ticketLabels } from './domain';
-import { deviceOnline, overdue } from './cleaner-model';
+import { binLabels, ticketLabels, categories, categoryOrder } from './domain';
+import { deviceOnline, overdue, stationStatus } from './cleaner-model';
 import { useLocale } from './locale';
 
 // Crop the presentation only; catalog coordinates stay normalized to the full base map.
@@ -26,10 +26,6 @@ export function CollectionMap({
   const [onlyAlerts, setOnlyAlerts] = useState(false);
   const [zoom, setZoom] = useState(1);
   const selected = state.stations.find((point) => point.id === selectedId);
-  const bin = state.bins.find((bin) => bin.id === selectedId);
-  const ticket = state.tickets.find(
-    (ticket) => ticket.bin_id === selectedId && ticket.status !== 'closed',
-  );
   const time = (value: number | null | undefined) =>
     value == null
       ? '—'
@@ -46,7 +42,7 @@ export function CollectionMap({
       <div className="panel-heading campus-map-heading">
         <div>
           <h2 id="map-title">{t('港科大（广州）校园点位图')}</h2>
-          <p>{t('50 个模拟点位 · 每点一个生活垃圾桶')}</p>
+          <p>{t('{count} 个站点 · 每站四类垃圾桶', { count: state.stations.length })}</p>
         </div>
         <label className="map-filter">
           <input
@@ -102,29 +98,8 @@ export function CollectionMap({
             />
           </svg>
           {state.stations.map((point) => {
-            const device = state.bins.find((bin) => bin.id === point.id);
-            const active = state.tickets.find(
-              (ticket) =>
-                ticket.bin_id === point.id && ticket.status !== 'closed',
-            );
-            const online = device && deviceOnline(device, now);
-            const status =
-              active && overdue(active, now)
-                ? 'overdue'
-                : active?.status === 'awaiting_verify'
-                  ? 'verify'
-                  : active
-                    ? 'full'
-                    : !online
-                      ? 'unknown'
-                      : 'available';
-            const label = active
-              ? t(
-                  overdue(active, now)
-                    ? '超时待处理'
-                    : ticketLabels[active.status],
-                )
-              : t(!online ? '离线或未知' : '未满');
+            const status = stationStatus(state, point.id, now);
+            const label = t(({ overdue: '超时待处理', full: '待清运', verify: '待传感器确认', unknown: '离线或未知', available: '未满' } as const)[status]);
             const dim =
               (zone !== 'all' && point.zone !== zone) ||
               (onlyAlerts && status === 'available');
@@ -186,10 +161,10 @@ export function CollectionMap({
         </details>
       </div>
       <div
-        className={selected && bin ? 'collection-point-detail' : undefined}
+        className={selected ? 'collection-point-detail' : undefined}
         aria-live="polite"
       >
-        {selected && bin ? (
+        {selected ? (
           <>
             <div className="detail-eyebrow">
               {selected.id} · {text(selected.zone ?? '')}
@@ -198,27 +173,20 @@ export function CollectionMap({
               <MapPin size={17} />
               {text(selected.name)}
             </strong>
-            <div className="detail-facts">
-              <span>
-                {t('设备状态')}：{t(binLabels[bin.status])}
-              </span>
-              <span>
-                {t(deviceOnline(bin, now) ? '设备在线' : '离线或未知')}
-              </span>
-              <span>
-                {t('最近有效上报')}：{time(bin.received_at)}
-              </span>
+            <div className="station-bin-grid">
+              {categoryOrder.map(category => {
+                const bin = state.bins.find(item => item.station_id === selected.id && item.category === category);
+                const ticket = bin && state.tickets.find(item => item.bin_id === bin.id && item.status !== 'closed');
+                const Icon = categories[category].icon;
+                return <article className={'station-bin-card ' + category} key={category}>
+                  <h3><Icon size={17} />{t(categories[category].label)}</h3>
+                  <small>{bin?.id ?? '—'}</small>
+                  <div className="detail-facts"><span>{t('设备状态')}：{t(binLabels[bin?.status ?? 'unknown'])}</span><span>{t(bin && deviceOnline(bin, now) ? '设备在线' : '离线或未知')}</span></div>
+                  <p>{t('最近有效上报')}：{time(bin?.received_at)}</p>
+                  <p>{ticket ? `#${ticket.id} · ${t(overdue(ticket, now) ? '超时待处理' : ticketLabels[ticket.status])}` : t('暂无进行中的工单')}</p>
+                </article>;
+              })}
             </div>
-            {ticket && (
-              <div className="detail-facts">
-                <span>
-                  #{ticket.id} · {t(ticketLabels[ticket.status])}
-                </span>
-                <span>
-                  {t('首次检测满桶')}：{time(ticket.opened_at)}
-                </span>
-              </div>
-            )}
             <button className="outline" onClick={() => onSelect('all')}>
               {t('取消点位筛选')}
             </button>

@@ -33,12 +33,13 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
 }) {
   const [stationId, setStationId] = useState('a');
   const [category, setCategory] = useState<Category>('recycle');
+  const [connectivityScope, setConnectivityScope] = useState<'bin' | 'station' | 'all'>('bin');
   const { t, text } = useLocale();
   const [localMessage, setLocalMessage] = useState<SimulatorMessage | null>(null);
   const [lastFull, setLastFull] = useState('');
   const station = state?.stations.find((item) => item.id === stationId) ?? state?.stations[0];
   const pointMode = station?.id.startsWith('GZ-') ?? false;
-  const bin = state?.bins.find((item) => item.station_id === station?.id && (pointMode || item.category === category));
+  const bin = state?.bins.find((item) => item.station_id === station?.id && item.category === category);
 
   async function report(status: BinStatus) {
     if (!bin || !station) return;
@@ -57,12 +58,12 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
     }
   }
 
-  async function setConnectivity(online: boolean, all = false) {
+  async function setConnectivity(online: boolean) {
     if (!bin || !station || !pointMode) return;
     setLocalMessage(null);
     try {
-      await update('/api/demo/connectivity', { target: all ? 'all' : bin.id, online });
-      setLocalMessage({ kind: 'connectivity', online, target: all ? t('全校 50 个点位') : `${bin.id} · ${text(station.name)}` });
+      await update('/api/demo/connectivity', { target: connectivityScope === 'all' ? 'all' : connectivityScope === 'station' ? station.id : bin.id, scope: connectivityScope === 'station' ? 'station' : 'bin', online });
+      setLocalMessage({ kind: 'connectivity', online, target: connectivityScope === 'all' ? t('全校 80 个垃圾桶') : connectivityScope === 'station' ? `${station.id} · ${t('本站四个垃圾桶')}` : `${bin.id} · ${t(categories[bin.category].label)}` });
     } catch (cause) { setLocalMessage({ kind: 'error', message: errorText(cause) }); }
   }
 
@@ -99,26 +100,25 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
           <div><h2 id="sim-title">{t('设备模拟器')}</h2><p>{t('向后端上报模拟红外状态')}</p></div>
           <button className="icon-button" aria-label={t('关闭模拟器')} onClick={() => dialog.current?.close()}><X size={22} /></button>
         </div>
-        <div className={'sim-fields' + (pointMode ? ' single' : '')}>
+        <div className="sim-fields">
           <label>{t('模拟站点')}<select value={station?.id ?? stationId} onChange={(event) => setStationId(event.currentTarget.value)}>
             {state?.stations.map((item) => <option key={item.id} value={item.id}>{pointMode ? `${item.id} · ` : ''}{text(item.name)}</option>)}
           </select></label>
-          {!pointMode && <label>{t('模拟桶位')}<select value={category} onChange={(event) => setCategory(event.currentTarget.value as Category)}>
+          <label>{t('模拟桶位')}<select value={category} onChange={(event) => setCategory(event.currentTarget.value as Category)}>
             {categoryOrder.map((key) => <option key={key} value={key}>{t(categories[key].label)}</option>)}
-          </select></label>}
+          </select></label>
         </div>
         {pointMode && <section className="sim-connectivity" aria-labelledby="sim-connectivity-title">
-          <div className="sim-connectivity-heading"><h3 id="sim-connectivity-title">{t('设备在线情况')}</h3><span>{t('全校在线 {online} / {total}', { online: state?.bins.filter(item => deviceOnline(item, Date.now())).length ?? 0, total: state?.bins.length ?? 50 })}</span></div>
-          <p className="sim-current-connectivity">{t('当前点位')}：<strong className={bin && deviceOnline(bin, Date.now()) ? 'is-online' : ''}>{t(bin && deviceOnline(bin, Date.now()) ? '在线' : '离线或未知')}</strong></p>
+          <div className="sim-connectivity-heading"><h3 id="sim-connectivity-title">{t('设备在线情况')}</h3><span>{t('全校在线 {online} / {total}', { online: state?.bins.filter(item => deviceOnline(item, Date.now())).length ?? 0, total: state?.bins.length ?? 80 })}</span></div>
+          <p className="sim-current-connectivity">{t(categories[category].label)}：<strong className={bin && deviceOnline(bin, Date.now()) ? 'is-online' : ''}>{t(bin && deviceOnline(bin, Date.now()) ? '在线' : '离线或未知')}</strong></p>
+          <label className="operations-select">{t('在线设置范围')}<select value={connectivityScope} onChange={event => setConnectivityScope(event.target.value as 'bin' | 'station' | 'all')}>
+            <option value="bin">{t('当前垃圾桶')}</option><option value="station">{t('本站四个垃圾桶')}</option><option value="all">{t('全校 80 个垃圾桶')}</option>
+          </select></label>
           <div className="sim-actions" role="group" aria-label={t('当前点位在线设置')}>
             <button className="outline" onClick={() => void setConnectivity(true)} disabled={disabled || !bin}>{t('设为在线')}</button>
             <button className="outline" onClick={() => void setConnectivity(false)} disabled={disabled || !bin}>{t('设为离线')}</button>
           </div>
           <p className="sim-connectivity-help">{t('设为在线会刷新模拟上报时间；未知点位初始化为未满。设为离线保留桶状态和工单。两小时无新上报仍会离线。')}</p>
-          <div className="sim-actions sim-bulk-connectivity" role="group" aria-label={t('全校点位在线设置')}>
-            <button className="outline" onClick={() => void setConnectivity(true, true)} disabled={disabled || !state}>{t('全校 50 点位全部在线')}</button>
-            <button className="outline" onClick={() => void setConnectivity(false, true)} disabled={disabled || !state}>{t('全校 50 点位全部离线')}</button>
-          </div>
         </section>}
         <div className="sim-observation">
           <span>{t('后端当前状态')}</span>
