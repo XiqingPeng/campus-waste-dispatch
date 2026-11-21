@@ -110,3 +110,7 @@ python3 scripts/verify_demo.py --base-url http://127.0.0.1:8081
 配置保存在数据库同目录的 `deepseek-config.json`，Unix 权限 0600，采用临时文件加原子替换写入；Railway 上位于持久卷 `/data/`，部署重启后保留。该文件包含真实密钥，应按服务器秘密文件管理，已加入 Git 忽略且不进入 Docker 构建。它不是 Railway Variables 的修改：存在保存文件时优先使用文件，否则兼容 `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` 环境变量。组内口令 `WASTE_ACCESS_KEY` 不受影响。
 
 配置查询/保存/测试分别使用 `GET /api/model-config`、`POST /api/model-config`、`POST /api/model-config/test`，均要求组内认证。测试和生成会消耗提供方额度，不自动触发；没有有效密钥时不能声称模型可用。开发验证使用独立测试实例与模拟供应商，真实密钥需由用户在页面填写后测试。
+
+## 模拟点位在线控制
+
+保洁端设备模拟器支持当前点位“设为在线／设为离线”及全校 50 点位批量操作。`POST /api/demo/connectivity` 需要组内认证，JSON 为 `{ "target": "GZ-001" | "all", "online": true | false }`，只影响 GZ 点位。设置在线刷新 received_at，未知点位初始化为未满；设置离线保存独立 simulated_offline 标记，保留最后桶状态、上报时间与工单。连接切换本身不会创建、关闭或重开工单。新有效传感器上报自动恢复在线，过期／重复上报不取消离线设置。仍遵循 120 分钟无有效上报即离线的规则。SQLite 幂等增加字段，重启保留模拟状态；重置演示数据清除此标记。
