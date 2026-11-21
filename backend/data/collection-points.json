@@ -9,7 +9,8 @@
     "is_simulated": true,
     "source_id": "A-001",
     "station_id": "GZ-001",
-    "active": true
+    "active": true,
+    "station_code": "GZ-001"
   },
   {
     "name": "W1 周边步道 B 点",
@@ -33,7 +34,8 @@
     "is_simulated": true,
     "source_id": "A-003",
     "station_id": "GZ-003",
-    "active": true
+    "active": true,
+    "station_code": "GZ-002"
   },
   {
     "name": "W2 周边步道 B 点",
@@ -57,7 +59,8 @@
     "is_simulated": true,
     "source_id": "A-005",
     "station_id": "GZ-005",
-    "active": true
+    "active": true,
+    "station_code": "GZ-003"
   },
   {
     "name": "W3 周边步道 B 点",
@@ -105,7 +108,8 @@
     "is_simulated": true,
     "source_id": "A-009",
     "station_id": "GZ-009",
-    "active": true
+    "active": true,
+    "station_code": "GZ-004"
   },
   {
     "name": "E1 周边步道 B 点",
@@ -129,7 +133,8 @@
     "is_simulated": true,
     "source_id": "A-011",
     "station_id": "GZ-011",
-    "active": true
+    "active": true,
+    "station_code": "GZ-005"
   },
   {
     "name": "E2 周边步道 B 点",
@@ -177,7 +182,8 @@
     "is_simulated": true,
     "source_id": "A-015",
     "station_id": "GZ-015",
-    "active": true
+    "active": true,
+    "station_code": "GZ-006"
   },
   {
     "name": "E4 周边步道 B 点",
@@ -201,7 +207,8 @@
     "is_simulated": true,
     "source_id": "B-001",
     "station_id": "GZ-017",
-    "active": true
+    "active": true,
+    "station_code": "GZ-007"
   },
   {
     "name": "饭堂周边 B 点",
@@ -237,7 +244,8 @@
     "is_simulated": true,
     "source_id": "B-004",
     "station_id": "GZ-020",
-    "active": true
+    "active": true,
+    "station_code": "GZ-008"
   },
   {
     "name": "饭堂公共步道点",
@@ -261,7 +269,8 @@
     "is_simulated": true,
     "source_id": "C-001",
     "station_id": "GZ-022",
-    "active": true
+    "active": true,
+    "station_code": "GZ-009"
   },
   {
     "name": "图书馆前场 B 点",
@@ -297,7 +306,8 @@
     "is_simulated": true,
     "source_id": "D-001",
     "station_id": "GZ-025",
-    "active": true
+    "active": true,
+    "station_code": "GZ-010"
   },
   {
     "name": "演讲厅公共区域 B 点",
@@ -333,7 +343,8 @@
     "is_simulated": true,
     "source_id": "E-001",
     "station_id": "GZ-028",
-    "active": true
+    "active": true,
+    "station_code": "GZ-011"
   },
   {
     "name": "宿舍 1B 楼外公共区域",
@@ -357,7 +368,8 @@
     "is_simulated": true,
     "source_id": "E-003",
     "station_id": "GZ-030",
-    "active": true
+    "active": true,
+    "station_code": "GZ-012"
   },
   {
     "name": "宿舍 2B 楼外公共区域",
@@ -381,7 +393,8 @@
     "is_simulated": true,
     "source_id": "E-005",
     "station_id": "GZ-032",
-    "active": true
+    "active": true,
+    "station_code": "GZ-013"
   },
   {
     "name": "宿舍 4A 楼外公共区域",
@@ -417,7 +430,8 @@
     "is_simulated": true,
     "source_id": "E-008",
     "station_id": "GZ-035",
-    "active": true
+    "active": true,
+    "station_code": "GZ-014"
   },
   {
     "name": "宿舍 5B 楼外公共区域",
@@ -465,7 +479,8 @@
     "is_simulated": true,
     "source_id": "E-012",
     "station_id": "GZ-039",
-    "active": true
+    "active": true,
+    "station_code": "GZ-015"
   },
   {
     "name": "宿舍 6C 楼外公共区域",
@@ -489,7 +504,8 @@
     "is_simulated": true,
     "source_id": "F-001",
     "station_id": "GZ-041",
-    "active": true
+    "active": true,
+    "station_code": "GZ-016"
   },
   {
     "name": "体育场外侧步道 B 点",
@@ -513,7 +529,8 @@
     "is_simulated": true,
     "source_id": "F-003",
     "station_id": "GZ-043",
-    "active": true
+    "active": true,
+    "station_code": "GZ-017"
   },
   {
     "name": "体育馆外侧步道 B 点",
@@ -537,7 +554,8 @@
     "is_simulated": true,
     "source_id": "G-001",
     "station_id": "GZ-045",
-    "active": true
+    "active": true,
+    "station_code": "GZ-018"
   },
   {
     "name": "行政大楼前场 B 点",
@@ -561,7 +579,8 @@
     "is_simulated": true,
     "source_id": "G-003",
     "station_id": "GZ-047",
-    "active": true
+    "active": true,
+    "station_code": "GZ-019"
   },
   {
     "name": "活动中心周边 B 点",
@@ -585,7 +604,8 @@
     "is_simulated": true,
     "source_id": "G-005",
     "station_id": "GZ-049",
-    "active": true
+    "active": true,
+    "station_code": "GZ-020"
   },
   {
     "name": "主入口内侧 B 点",
