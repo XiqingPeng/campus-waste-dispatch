@@ -1,5 +1,11 @@
 # 校园垃圾分类引导与按需清运系统
 
+## 在线访问
+
+**[打开正式站 · 保洁工作台](https://campus-loop-production-30b37918.up.railway.app/#cleaner)** · [学生投放](https://campus-loop-production-30b37918.up.railway.app/#student)
+
+手机和电脑均可直接访问。查看页面无需登录；设备模拟、清运操作和 DeepSeek API 配置需要组内登录。口令向组员获取，DeepSeek 密钥在正式站的“清运分析 → 配置 API”中设置。
+
 课程项目原型。以宿舍区的三个示意站点为例，学生端根据物品和桶位状态给出投放指引，保洁端根据同一条满桶事件生成工单。相同物品可随桶位状态变化显示本站投放、去附近同类桶或等待清运。
 
 [组员开发交接](HANDOFF.md)
