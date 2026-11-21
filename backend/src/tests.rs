@@ -358,6 +358,9 @@ async fn collection_catalog_and_analysis_are_separate_from_sorting() {
     let initial = send(&app, "GET", "/api/state", Value::Null).await;
     let points = initial["collection_points"].as_array().unwrap();
     assert_eq!(points.len(), 20);
+    for (index, point) in points.iter().enumerate() {
+        assert_eq!(point["station_code"], format!("GZ-{:03}", index + 1));
+    }
     let ids: std::collections::HashSet<_> = points
         .iter()
         .map(|point| point["station_id"].as_str().unwrap())

@@ -53,6 +53,8 @@ const STATIONS: [Station; 3] = [
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct CollectionPoint {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    station_code: Option<String>,
     pub(crate) station_id: String,
     pub(crate) name: String,
     active: bool,
