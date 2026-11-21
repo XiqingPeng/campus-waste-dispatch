@@ -39,6 +39,7 @@ test('online devices need a recent valid receipt and a known state',async()=>{
   const {deviceOnline,DEVICE_TIMEOUT_MS}=await import('data:text/javascript;base64,'+Buffer.from(outputText).toString('base64'));
   const bin={status:'available',received_at:1000};
   assert.equal(deviceOnline(bin,1000),true);
+  assert.equal(deviceOnline({...bin,simulated_offline:true},1000),false);
   assert.equal(deviceOnline(bin,1000+DEVICE_TIMEOUT_MS),false);
   assert.equal(deviceOnline({...bin,status:'unknown'},1000),false);
   assert.equal(deviceOnline({...bin,received_at:null},1000),false);
