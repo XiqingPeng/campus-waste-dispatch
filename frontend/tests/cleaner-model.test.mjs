@@ -67,3 +67,17 @@ test('station marker prioritizes work across four bins and keeps retired records
   assert.deepEqual(view.tickets,[pending]);
   assert.deepEqual(view.retired_tickets,[retiredTicket]);
 });
+
+test('renumbered station and bin labels retain original mutation and ticket identities', async () => {
+  const {collectionState}=await import('data:text/javascript;base64,'+Buffer.from(outputText).toString('base64'));
+  const bins=['recycle','food','residual','hazard'].map(category=>({id:category==='residual'?'GZ-017':`GZ-017-${category}`,station_id:'GZ-017',category,status:'full'}));
+  const originalTickets=bins.map((bin,index)=>({...ticket,id:index+1,bin_id:bin.id}));
+  const snapshot={stations:[],bins,tickets:originalTickets,collection_points:[{station_id:'GZ-017',station_code:'GZ-007',name:'Canteen'}]};
+  const view=collectionState(snapshot);
+  assert.equal(view.stations[0].code,'GZ-007');
+  assert.equal(view.stations[0].id,'GZ-017');
+  assert.deepEqual(view.bins.map(bin=>bin.display_id),['GZ-007-recycle','GZ-007-food','GZ-007-residual','GZ-007-hazard']);
+  assert.deepEqual(view.bins.map(bin=>bin.id),bins.map(bin=>bin.id));
+  assert.deepEqual(view.tickets,originalTickets);
+  assert.ok(snapshot.bins.every(bin=>bin.display_id===undefined));
+});
