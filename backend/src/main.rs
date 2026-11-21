@@ -1,6 +1,7 @@
 mod access;
 mod analysis;
 mod db;
+mod model_settings;
 mod vision;
 
 use std::{
@@ -67,7 +68,7 @@ impl IntoResponse for ApiError {
 struct AppState {
     store: Arc<Store>,
     vision: Vision,
-    analysis: Analysis,
+    model_settings: model_settings::ModelSettings,
     access: Access,
 }
 
@@ -77,11 +78,11 @@ impl AppState {
         vision: Vision,
         analysis: Analysis,
         access: Access,
-    ) -> rusqlite::Result<Self> {
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
             store: Arc::new(Store::open(path)?),
             vision,
-            analysis,
+            model_settings: model_settings::ModelSettings::open(path, analysis.credentials())?,
             access,
         })
     }
@@ -106,9 +107,23 @@ fn api(state: AppState) -> Router {
                 .layer(DefaultBodyLimit::max(1024)),
         )
         .route("/access/logout", post(access_logout))
+        .route(
+            "/model-config",
+            get(model_config)
+                .post(save_model_config)
+                .layer(DefaultBodyLimit::max(2048)),
+        )
+        .route(
+            "/model-config/test",
+            post(test_model_config).layer(DefaultBodyLimit::max(2048)),
+        )
         .route("/sensor", post(sensor))
         .route("/tickets/{id}/collect", post(collect))
         .route("/demo/reset", post(reset))
+        .route(
+            "/demo/connectivity",
+            post(connectivity).layer(DefaultBodyLimit::max(1024)),
+        )
         .route(
             "/analysis",
             get(analysis_preview)
@@ -170,6 +185,32 @@ async fn sensor(
     state.store.sensor(event, now_ms()).map(Json)
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConnectivityInput {
+    #[serde(default = "connectivity_scope")]
+    scope: String,
+    target: String,
+    online: bool,
+}
+
+fn connectivity_scope() -> String {
+    "bin".into()
+}
+
+async fn connectivity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    input: Result<Json<ConnectivityInput>, JsonRejection>,
+) -> Result<Json<Snapshot>, ApiError> {
+    state.access.require(&headers)?;
+    let Json(input) = input?;
+    state
+        .store
+        .connectivity(&input.target, input.online, &input.scope, now_ms())
+        .map(Json)
+}
+
 async fn collect(
     State(state): State<AppState>,
     RoutePath(id): RoutePath<i64>,
@@ -199,6 +240,36 @@ async fn recognize(
     state.vision.recognize(input).await.map(Json)
 }
 
+async fn model_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<model_settings::ConfigStatus>, ApiError> {
+    state.access.require(&headers)?;
+    state.model_settings.status().map(Json)
+}
+
+async fn save_model_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    input: Result<Json<model_settings::ConfigInput>, JsonRejection>,
+) -> Result<Json<model_settings::ConfigStatus>, ApiError> {
+    state.access.require(&headers)?;
+    state.model_settings.save(input?.0).map(Json)
+}
+
+async fn test_model_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    input: Result<Json<model_settings::ConfigInput>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    state.access.require(&headers)?;
+    let credentials = state.model_settings.draft(input?.0)?;
+    Analysis::configured(Some(credentials))?
+        .test_connection()
+        .await?;
+    Ok(Json(json!({"ok": true})))
+}
+
 async fn analyze(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -207,8 +278,7 @@ async fn analyze(
     state.access.require(&headers)?;
     let Json(input) = input?;
     let snapshot = state.store.snapshot()?;
-    state
-        .analysis
+    Analysis::configured(state.model_settings.credentials()?)?
         .report(snapshot, input, now_ms(), true)
         .await
         .map(Json)
@@ -219,8 +289,7 @@ async fn analysis_preview(
     Query(input): Query<AnalysisRequest>,
 ) -> Result<Json<Report>, ApiError> {
     let snapshot = state.store.snapshot()?;
-    state
-        .analysis
+    Analysis::configured(state.model_settings.credentials()?)?
         .report(snapshot, input, now_ms(), false)
         .await
         .map(Json)

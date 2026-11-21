@@ -84,7 +84,7 @@ export function CampusMap({ state, nextStation }: { state: Snapshot; nextStation
               const ticket = state.tickets.find((item) => item.bin_id === bin.id && item.status !== 'closed');
               return (
                 <li key={bin.id}>
-                  <strong>{t(categories[category].label)}</strong>
+                  <strong>{t(categories[category].label)}<small className="map-bin-id">{bin.id}</small></strong>
                   <span className={bin.status}>{t(ticket ? ticketLabels[ticket.status] : binLabels[bin.status])}</span>
                 </li>
               );

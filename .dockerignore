@@ -5,6 +5,8 @@
 !backend/Cargo.lock
 !backend/src/
 !backend/src/**
+!backend/data/
+!backend/data/collection-points.json
 !frontend/
 !frontend/package.json
 !frontend/package-lock.json

@@ -1,4 +1,7 @@
-use std::{path::Path, sync::Mutex};
+use std::{
+    path::Path,
+    sync::{Mutex, OnceLock},
+};
 
 use axum::http::StatusCode;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -47,6 +50,49 @@ const STATIONS: [Station; 3] = [
         y: 70,
     },
 ];
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct CollectionPoint {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    station_code: Option<String>,
+    pub(crate) station_id: String,
+    pub(crate) name: String,
+    active: bool,
+    pub(crate) zone: String,
+    pub(crate) zone_key: String,
+    building: String,
+    map_x: f64,
+    map_y: f64,
+    is_simulated: bool,
+    source_id: String,
+}
+
+fn collection_catalog() -> &'static [CollectionPoint] {
+    static POINTS: OnceLock<Vec<CollectionPoint>> = OnceLock::new();
+    POINTS.get_or_init(|| {
+        serde_json::from_str(include_str!("../data/collection-points.json"))
+            .expect("valid collection station catalog")
+    })
+}
+
+pub fn collection_points() -> Vec<CollectionPoint> {
+    collection_catalog()
+        .iter()
+        .filter(|p| p.active)
+        .cloned()
+        .collect()
+}
+
+impl CollectionPoint {
+    fn bin_id(&self, category: Category) -> String {
+        // Preserve the original residual bin ID and its history.
+        if matches!(category, Category::Residual) {
+            self.station_id.clone()
+        } else {
+            format!("{}-{}", self.station_id, category.as_str())
+        }
+    }
+}
 
 fn station(id: &str) -> Option<Station> {
     STATIONS.into_iter().find(|station| station.id == id)
@@ -111,6 +157,8 @@ pub struct Bin {
     category: String,
     status: String,
     observed_at: Option<i64>,
+    received_at: Option<i64>,
+    simulated_offline: bool,
 }
 
 #[derive(Serialize)]
@@ -128,6 +176,8 @@ pub struct Snapshot {
     pub(crate) tickets: Vec<Ticket>,
     pub(crate) stations: [Station; 3],
     recommendation: Option<i64>,
+    pub(crate) collection_points: Vec<CollectionPoint>,
+    retired_collection_points: Vec<CollectionPoint>,
 }
 
 #[derive(Deserialize)]
@@ -184,6 +234,24 @@ impl Store {
         if !has_closed_at {
             migration.execute("ALTER TABLE tickets ADD COLUMN closed_at INTEGER", [])?;
         }
+        let has_received_at: bool = migration.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('bins') WHERE name = 'received_at')",
+            [],
+            |row| row.get(0),
+        )?;
+        if !has_received_at {
+            migration.execute("ALTER TABLE bins ADD COLUMN received_at INTEGER", [])?;
+        }
+        let has_simulated_offline: bool = migration.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('bins') WHERE name = 'simulated_offline')", [], |row| row.get(0)
+        )?;
+        if !has_simulated_offline {
+            migration.execute(
+                "ALTER TABLE bins ADD COLUMN simulated_offline INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+
         migration.commit()?;
         for station in STATIONS {
             for category in Category::ALL {
@@ -193,6 +261,11 @@ impl Store {
                      VALUES (?1, ?2, ?3, 'available')",
                     params![format!("{}-{category}", station.id), station.id, category],
                 )?;
+            }
+        }
+        for point in collection_points() {
+            for category in Category::ALL {
+                connection.execute("INSERT OR IGNORE INTO bins (id, station_id, category, status) VALUES (?1, ?2, ?3, 'unknown')", params![point.bin_id(category), point.station_id, category.as_str()])?;
             }
         }
         Ok(Self(Mutex::new(connection)))
@@ -259,7 +332,7 @@ impl Store {
         if event.observed_at <= 0 || event.observed_at > now + 300_000 {
             return Err(ApiError::bad_request("无效的设备时间戳"));
         }
-        self.update(|transaction| apply_sensor(transaction, event))
+        self.update(|transaction| apply_sensor(transaction, event, now))
     }
 
     pub fn collect(&self, id: i64, now: i64) -> Result<Snapshot, ApiError> {
@@ -281,19 +354,65 @@ impl Store {
         })
     }
 
+    pub fn connectivity(
+        &self,
+        target: &str,
+        online: bool,
+        scope: &str,
+        now: i64,
+    ) -> Result<Snapshot, ApiError> {
+        if !matches!(scope, "bin" | "station") {
+            return Err(ApiError::bad_request("无效的在线设置范围。"));
+        }
+        let bin_ids: Vec<String> = collection_points()
+            .iter()
+            .flat_map(|point| {
+                Category::ALL.map(|category| (point.station_id.clone(), point.bin_id(category)))
+            })
+            .filter(|(station, bin)| {
+                target == "all"
+                    || if scope == "station" {
+                        station == target
+                    } else {
+                        bin == target
+                    }
+            })
+            .map(|(_, bin)| bin)
+            .collect();
+        if bin_ids.is_empty() {
+            return Err(ApiError::bad_request("请选择有效的校园点位。"));
+        }
+        self.update(|transaction| {
+            for id in &bin_ids {
+                transaction.execute(
+                    "UPDATE bins SET simulated_offline = ?1,
+                    status = CASE WHEN ?2 AND status = 'unknown' THEN 'available' ELSE status END,
+                    observed_at = CASE WHEN ?2 AND status = 'unknown' THEN ?3 ELSE observed_at END,
+                    received_at = CASE WHEN ?2 THEN ?3 ELSE received_at END WHERE id = ?4",
+                    params![!online, online, now, id],
+                )?;
+            }
+            Ok(())
+        })
+    }
+
     pub fn reset(&self) -> Result<Snapshot, ApiError> {
         self.update(|transaction| {
             transaction.execute_batch(
                 "DELETE FROM sensor_events;
                  DELETE FROM tickets;
-                 UPDATE bins SET status = 'available', observed_at = NULL;",
+                 UPDATE bins SET status = CASE WHEN id LIKE 'GZ-%' THEN 'unknown' ELSE 'available' END, observed_at = NULL, received_at = NULL, simulated_offline = 0;",
             )?;
             Ok(())
         })
     }
 }
 
-fn apply_sensor(transaction: &Transaction<'_>, event: SensorReport) -> Result<(), ApiError> {
+fn apply_sensor(
+    transaction: &Transaction<'_>,
+    event: SensorReport,
+    now: i64,
+) -> Result<(), ApiError> {
     let previous: Option<i64> = transaction
         .query_row(
             "SELECT observed_at FROM bins WHERE id = ?1",
@@ -336,8 +455,8 @@ fn apply_sensor(transaction: &Transaction<'_>, event: SensorReport) -> Result<()
     }
 
     transaction.execute(
-        "UPDATE bins SET status = ?1, observed_at = ?2 WHERE id = ?3",
-        params![status, event.observed_at, event.bin_id],
+        "UPDATE bins SET simulated_offline = 0, status = ?1, observed_at = ?2, received_at = CASE WHEN id LIKE 'GZ-%' THEN ?4 ELSE received_at END WHERE id = ?3",
+        params![status, event.observed_at, event.bin_id, now],
     )?;
     match event.status {
         BinStatus::Full => {
@@ -365,8 +484,9 @@ fn apply_sensor(transaction: &Transaction<'_>, event: SensorReport) -> Result<()
 }
 
 fn snapshot(connection: &Connection) -> rusqlite::Result<Snapshot> {
-    let mut statement = connection
-        .prepare("SELECT id, station_id, category, status, observed_at FROM bins ORDER BY id")?;
+    let mut statement = connection.prepare(
+        "SELECT id, station_id, category, status, observed_at, received_at, simulated_offline FROM bins ORDER BY id",
+    )?;
     let bins = statement
         .query_map([], |row| {
             Ok(Bin {
@@ -375,6 +495,8 @@ fn snapshot(connection: &Connection) -> rusqlite::Result<Snapshot> {
                 category: row.get(2)?,
                 status: row.get(3)?,
                 observed_at: row.get(4)?,
+                received_at: row.get(5)?,
+                simulated_offline: row.get(6)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -427,6 +549,12 @@ fn snapshot(connection: &Connection) -> rusqlite::Result<Snapshot> {
         bins,
         tickets,
         stations: STATIONS,
+        collection_points: collection_points(),
+        retired_collection_points: collection_catalog()
+            .iter()
+            .filter(|p| !p.active)
+            .cloned()
+            .collect(),
         recommendation,
     })
 }

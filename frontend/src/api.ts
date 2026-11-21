@@ -47,6 +47,7 @@ async function requestSnapshot(path: string, payload?: unknown): Promise<Snapsho
 export function useCampusState() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [connected, setConnected] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const epoch = useRef(0);
@@ -62,6 +63,7 @@ export function useCampusState() {
           const data = await requestSnapshot('/api/state');
           if (alive && epoch.current === version) {
             setSnapshot(data);
+            setLastUpdated(Date.now());
             setConnected(true);
             setLoadError('');
           }
@@ -86,6 +88,7 @@ export function useCampusState() {
     try {
       const data = await requestSnapshot(path, payload);
       setSnapshot(data);
+      setLastUpdated(Date.now());
       setConnected(true);
       setLoadError('');
       return data;
@@ -95,5 +98,5 @@ export function useCampusState() {
     }
   }, []);
 
-  return { snapshot, busy, connected, loadError, update };
+  return { snapshot, busy, connected, loadError, lastUpdated, update };
 }

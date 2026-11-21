@@ -1,0 +1,36 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import ts from 'typescript';
+const source = await readFile(
+  new URL('../src/analysis-contract.ts', import.meta.url),
+  'utf8',
+);
+const { outputText } = ts.transpileModule(source, {
+  compilerOptions: { module: ts.ModuleKind.ESNext },
+});
+const { normalizeStats } = await import(
+  'data:text/javascript;base64,' + Buffer.from(outputText).toString('base64')
+);
+const range = { start: 1, end: 100, days: 7, source: 'backend' };
+const raw = {
+  total: 1,
+  hourly: [1, ...Array(23).fill(0)],
+  zones: [{ name: 'canteen', events: 1, bin_count: 5 }],
+};
+test('statistics preserve missing values as unknown', () => {
+  const result = normalizeStats(raw, range);
+  assert.equal(result.resolved, null);
+  assert.equal(result.average, null);
+  assert.equal(result.zones[0].events, 1);
+});
+test('invalid statistics fail rather than becoming fabricated zeroes', () => {
+  for (const value of [
+    { ...raw, total: -1 },
+    { ...raw, hourly: [1] },
+    { ...raw, total: 2 },
+    { ...raw, resolved: 3 },
+    { ...raw, zones: [{ name: 'canteen', events: '1' }] },
+  ])
+    assert.throws(() => normalizeStats(value, range));
+});

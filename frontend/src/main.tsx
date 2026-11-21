@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { accessRequiredEvent, errorText, request, useCampusState } from './api';
 import type { AccessStatus } from './api';
 import { Cleaner } from './cleaner';
+import { collectionState, sortingState, deviceOnline } from './cleaner-model';
 import { binLabels, categories, categoryOrder } from './domain';
 import type { BinStatus, Category, Snapshot, Station } from './domain';
 import { GroupAccess } from './group-access';
@@ -16,6 +17,7 @@ type Mutation = (path: string, payload?: unknown) => Promise<Snapshot>;
 type SimulatorMessage =
   | { kind: 'reported'; station: Station; category: Category; status: BinStatus }
   | { kind: 'reset' }
+  | { kind: 'connectivity'; online: boolean; target: string }
   | { kind: 'error'; message: string };
 function currentView(): View {
   return window.location.hash === '#cleaner' ? 'cleaner' : 'student';
@@ -31,11 +33,13 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
 }) {
   const [stationId, setStationId] = useState('a');
   const [category, setCategory] = useState<Category>('recycle');
+  const [connectivityScope, setConnectivityScope] = useState<'bin' | 'station' | 'all'>('bin');
   const { t, text } = useLocale();
   const [localMessage, setLocalMessage] = useState<SimulatorMessage | null>(null);
   const [lastFull, setLastFull] = useState('');
-  const station = state?.stations.find((item) => item.id === stationId);
-  const bin = state?.bins.find((item) => item.station_id === stationId && item.category === category);
+  const station = state?.stations.find((item) => item.id === stationId) ?? state?.stations[0];
+  const pointMode = station?.id.startsWith('GZ-') ?? false;
+  const bin = state?.bins.find((item) => item.station_id === station?.id && item.category === category);
 
   async function report(status: BinStatus) {
     if (!bin || !station) return;
@@ -48,10 +52,19 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
         observed_at: Math.max(Date.now(), (bin.observed_at ?? 0) + 1),
       });
       if (status === 'full') setLastFull(bin.id);
-      setLocalMessage({ kind: 'reported', station, category, status });
+      setLocalMessage({ kind: 'reported', station, category: bin.category, status });
     } catch (cause) {
       setLocalMessage({ kind: 'error', message: errorText(cause) });
     }
+  }
+
+  async function setConnectivity(online: boolean) {
+    if (!bin || !station || !pointMode) return;
+    setLocalMessage(null);
+    try {
+      await update('/api/demo/connectivity', { target: connectivityScope === 'all' ? 'all' : connectivityScope === 'station' ? station.id : bin.id, scope: connectivityScope === 'station' ? 'station' : 'bin', online });
+      setLocalMessage({ kind: 'connectivity', online, target: connectivityScope === 'all' ? t('全校 80 个垃圾桶') : connectivityScope === 'station' ? `${station.code ?? station.id} · ${t('本站四个垃圾桶')}` : `${bin.display_id ?? bin.id} · ${t(categories[bin.category].label)}` });
+    } catch (cause) { setLocalMessage({ kind: 'error', message: errorText(cause) }); }
   }
 
   async function reset() {
@@ -74,6 +87,7 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
         category: t(categories[localMessage.category].label),
         status: t(binLabels[localMessage.status]),
       })
+    : localMessage?.kind === 'connectivity' ? t(localMessage.online ? '已将{target}设为在线。' : '已将{target}设为离线。', { target: localMessage.target })
     : localMessage?.kind === 'reset' ? t('演示数据已复位。') : text(localMessage?.message ?? '');
 
   return (
@@ -87,13 +101,25 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
           <button className="icon-button" aria-label={t('关闭模拟器')} onClick={() => dialog.current?.close()}><X size={22} /></button>
         </div>
         <div className="sim-fields">
-          <label>{t('模拟站点')}<select value={stationId} onChange={(event) => setStationId(event.currentTarget.value)}>
-            {state?.stations.map((item) => <option key={item.id} value={item.id}>{text(item.name)}</option>)}
+          <label>{t('模拟站点')}<select value={station?.id ?? stationId} onChange={(event) => setStationId(event.currentTarget.value)}>
+            {state?.stations.map((item) => <option key={item.id} value={item.id}>{pointMode ? `${item.code ?? item.id} · ` : ''}{text(item.name)}</option>)}
           </select></label>
           <label>{t('模拟桶位')}<select value={category} onChange={(event) => setCategory(event.currentTarget.value as Category)}>
             {categoryOrder.map((key) => <option key={key} value={key}>{t(categories[key].label)}</option>)}
           </select></label>
         </div>
+        {pointMode && <section className="sim-connectivity" aria-labelledby="sim-connectivity-title">
+          <div className="sim-connectivity-heading"><h3 id="sim-connectivity-title">{t('设备在线情况')}</h3><span>{t('全校在线 {online} / {total}', { online: state?.bins.filter(item => deviceOnline(item, Date.now())).length ?? 0, total: state?.bins.length ?? 80 })}</span></div>
+          <p className="sim-current-connectivity">{t(categories[category].label)}：<strong className={bin && deviceOnline(bin, Date.now()) ? 'is-online' : ''}>{t(bin && deviceOnline(bin, Date.now()) ? '在线' : '离线或未知')}</strong></p>
+          <label className="operations-select">{t('在线设置范围')}<select value={connectivityScope} onChange={event => setConnectivityScope(event.target.value as 'bin' | 'station' | 'all')}>
+            <option value="bin">{t('当前垃圾桶')}</option><option value="station">{t('本站四个垃圾桶')}</option><option value="all">{t('全校 80 个垃圾桶')}</option>
+          </select></label>
+          <div className="sim-actions" role="group" aria-label={t('当前点位在线设置')}>
+            <button className="outline" onClick={() => void setConnectivity(true)} disabled={disabled || !bin}>{t('设为在线')}</button>
+            <button className="outline" onClick={() => void setConnectivity(false)} disabled={disabled || !bin}>{t('设为离线')}</button>
+          </div>
+          <p className="sim-connectivity-help">{t('设为在线会刷新模拟上报时间；未知点位初始化为未满。设为离线保留桶状态和工单。两小时无新上报仍会离线。')}</p>
+        </section>}
         <div className="sim-observation">
           <span>{t('后端当前状态')}</span>
           <strong className={bin?.status === 'full' ? 'warn-text' : ''}>{t(binLabels[bin?.status ?? 'unknown'])}</strong>
@@ -102,12 +128,12 @@ function Simulator({ dialog, state, update, disabled, onReset, onLogout }: {
           <button className="primary" onClick={() => void report('full')} disabled={disabled || !bin}><Activity size={18} /> {t('上报已满')}</button>
           <button className="outline" onClick={() => void report('full')} disabled={disabled || !bin || lastFull !== bin.id}>{t('再次上报已满')}</button>
           <button className="outline" onClick={() => void report('available')} disabled={disabled || !bin}>{t('上报未满')}</button>
-          <button className="outline" onClick={() => void report('unknown')} disabled={disabled || !bin}>{t('模拟设备离线')}</button>
+          {!pointMode && <button className="outline" onClick={() => void report('unknown')} disabled={disabled || !bin}>{t('模拟设备离线')}</button>}
         </div>
         <div className={'sim-feedback' + (localMessage?.kind === 'error' ? ' error' : '')} role="status">{feedback}</div>
         <div className="sim-footer">
           <button className="outline" onClick={() => void reset()} disabled={disabled}><RotateCcw size={16} /> {t('重置演示数据')}</button>
-          <p>{t('清空演示工单，恢复全部示范桶位。')}</p>
+          <p>{t('清空全部演示工单；分类桶恢复可投放，清运点位恢复未知。')}</p>
           {onLogout && <button className="outline" onClick={onLogout}><LogOut size={16} /> {t('退出组内访问')}</button>}
         </div>
       </div>
@@ -124,7 +150,9 @@ function App() {
   const [access, setAccess] = useState<AccessStatus | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const accessDialog = useRef<HTMLDialogElement>(null);
-  const { snapshot, connected, busy, loadError, update } = useCampusState();
+  const { snapshot, connected, busy, loadError, lastUpdated, update } = useCampusState();
+  const cleanerSnapshot = collectionState(snapshot);
+  const studentSnapshot = sortingState(snapshot);
   const station = snapshot?.stations.find((item) => item.id === stationId) ?? snapshot?.stations[0];
   const locked = access?.required && !access.signed_in;
 
@@ -214,9 +242,9 @@ function App() {
       <main className={view === 'cleaner' ? 'layout cleaner-layout' : 'layout'} id="main-content" tabIndex={-1}>
         <section className="page-heading" aria-labelledby="page-title">
           <div>
-            <div className="location"><MapPin size={16} /> {t('宿舍区')}</div>
+            <div className="location"><MapPin size={16} /> {t(view === 'cleaner' ? '全校清运监测' : '宿舍区')}</div>
             <h1 id="page-title">{t(view === 'student' ? '校园分类投放' : '保洁工作台')}</h1>
-            <p>{t(view === 'student' ? '识别手中的物品，获取当前可用的投放位置。' : '查看满桶工单与推荐清运顺序。')}</p>
+            <p>{t(view === 'student' ? '识别手中的物品，获取当前可用的投放位置。' : '跟进满桶提醒、清运复核与历史记录。')}</p>
           </div>
           <div className="page-tools">
             <span className={'connection' + (connected ? ' online' : '')} title={loadError ? text(loadError) : t('桶位与工单实时同步')}>
@@ -239,13 +267,13 @@ function App() {
         {loadError && <div className="callout error connection-error" role="status"><CircleAlert size={17} /><span>{text(loadError)} {t('桶位状态待重新连接确认。')}</span></div>}
         {notice && <div className="callout error connection-error" role="status"><CircleAlert size={17} /><span>{text(notice)}</span></div>}
         <div hidden={view !== 'student'}>
-          <Student key={studentVersion} state={snapshot} station={station} visible={view === 'student'} connected={connected} />
+          <Student key={studentVersion} state={studentSnapshot} station={station} visible={view === 'student'} connected={connected} />
         </div>
-        {view === 'cleaner' && <Cleaner state={snapshot} connected={connected} busy={busy} onCollect={(id) => void collect(id)} />}
+        {view === 'cleaner' && <Cleaner state={cleanerSnapshot} connected={connected} busy={busy} lastUpdated={lastUpdated} onCollect={(id) => void collect(id)} />}
       </main>
 
       <GroupAccess dialog={accessDialog} onLogin={setAccess} />
-      <Simulator dialog={dialog} state={snapshot} update={update} disabled={busy || !connected}
+      <Simulator key={view} dialog={dialog} state={view === 'cleaner' ? cleanerSnapshot : studentSnapshot} update={update} disabled={busy || !connected}
         onLogout={access?.required && access.signed_in ? () => void logout() : undefined} onReset={() => {
         setStudentVersion((version) => version + 1);
         setStationId('a');

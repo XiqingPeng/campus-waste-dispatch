@@ -14,6 +14,16 @@ pub struct AnalysisRequest {
     days: u8,
     #[serde(default)]
     lang: Language,
+    #[serde(default)]
+    scope: Scope,
+}
+
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Scope {
+    #[default]
+    Sorting,
+    Collection,
 }
 
 #[derive(Clone, Copy, Default, Deserialize, Serialize)]
@@ -58,6 +68,8 @@ struct Stats {
     timed: usize,
     mean_minutes: Option<f64>,
     stations: Vec<StationStats>,
+    hourly: [usize; 24],
+    zones: Vec<ZoneStats>,
 }
 
 #[derive(Serialize)]
@@ -67,41 +79,110 @@ struct StationStats {
     active: usize,
 }
 
+#[derive(Default, Serialize)]
+struct ZoneStats {
+    name: String,
+    bin_count: usize,
+    events: usize,
+}
+
 impl Stats {
-    fn from_snapshot(snapshot: &Snapshot, start: i64, now: i64, lang: Language) -> Self {
+    fn from_snapshot(
+        snapshot: &Snapshot,
+        start: i64,
+        now: i64,
+        lang: Language,
+        scope: Scope,
+    ) -> Self {
         let mut stats = Self {
-            stations: snapshot
-                .stations
-                .iter()
-                .map(|station| StationStats {
-                    name: lang.choose(
-                        station.name.to_owned(),
-                        format!("Residence Station {}", station.id.to_ascii_uppercase()),
-                    ),
-                    opened: 0,
-                    active: 0,
-                })
-                .collect(),
+            stations: match scope {
+                Scope::Sorting => snapshot
+                    .stations
+                    .iter()
+                    .map(|station| StationStats {
+                        name: lang.choose(
+                            station.name.to_owned(),
+                            format!("Residence Station {}", station.id.to_ascii_uppercase()),
+                        ),
+                        opened: 0,
+                        active: 0,
+                    })
+                    .collect(),
+                Scope::Collection => snapshot
+                    .collection_points
+                    .iter()
+                    .map(|point| StationStats {
+                        name: point.name.clone(),
+                        opened: 0,
+                        active: 0,
+                    })
+                    .collect(),
+            },
             ..Self::default()
         };
+        if matches!(scope, Scope::Collection) {
+            for point in &snapshot.collection_points {
+                if let Some(zone) = stats.zones.iter_mut().find(|zone| zone.name == point.zone) {
+                    zone.bin_count += 4;
+                } else {
+                    stats.zones.push(ZoneStats {
+                        name: point.zone.clone(),
+                        bin_count: 4,
+                        events: 0,
+                    });
+                }
+            }
+        }
         let mut elapsed_ms = 0;
         for ticket in snapshot
             .tickets
             .iter()
             .filter(|ticket| (start..=now).contains(&ticket.opened_at))
+            .filter(|ticket| match scope {
+                Scope::Sorting => !ticket.bin_id.starts_with("GZ-"),
+                Scope::Collection => snapshot
+                    .bins
+                    .iter()
+                    .find(|b| b.id == ticket.bin_id)
+                    .is_some_and(|bin| {
+                        snapshot
+                            .collection_points
+                            .iter()
+                            .any(|p| p.station_id == bin.station_id)
+                    }),
+            })
         {
             let is_closed = ticket.status == "closed";
             stats.opened += 1;
-            let station_index = snapshot
-                .bins
-                .iter()
-                .find(|bin| bin.id == ticket.bin_id)
-                .and_then(|bin| {
+            stats.hourly[((ticket.opened_at / 3_600_000 + 8).rem_euclid(24)) as usize] += 1;
+            let station_index = match scope {
+                Scope::Sorting => snapshot
+                    .bins
+                    .iter()
+                    .find(|bin| bin.id == ticket.bin_id)
+                    .and_then(|bin| {
+                        snapshot
+                            .stations
+                            .iter()
+                            .position(|station| station.id == bin.station_id)
+                    }),
+                Scope::Collection => snapshot.collection_points.iter().position(|point| {
                     snapshot
-                        .stations
+                        .bins
                         .iter()
-                        .position(|station| station.id == bin.station_id)
-                });
+                        .any(|bin| bin.id == ticket.bin_id && bin.station_id == point.station_id)
+                }),
+            };
+            if let Some(point) = snapshot.collection_points.iter().find(|point| {
+                snapshot
+                    .bins
+                    .iter()
+                    .any(|bin| bin.id == ticket.bin_id && bin.station_id == point.station_id)
+            }) {
+                if let Some(zone) = stats.zones.iter_mut().find(|zone| zone.name == point.zone) {
+                    zone.events += 1;
+                }
+            }
             if let Some(index) = station_index {
                 stats.stations[index].opened += 1;
                 stats.stations[index].active += usize::from(!is_closed);
@@ -176,7 +257,7 @@ impl Stats {
                 key: "active",
                 action: lang
                     .choose(
-                        "查看推荐清运站，并跟踪进行中工单是否及时关闭。",
+                        "查看待清运点位，并跟踪进行中工单是否及时关闭。",
                         "Review the recommended stop and track open tickets until they are closed.",
                     )
                     .into(),
@@ -213,11 +294,11 @@ impl Stats {
                 ),
                 evidence: lang.choose(
                     format!(
-                        "{}在所选时段创建 {} 张工单，为三个示范站中最多。",
+                        "{}在所选时段创建 {} 张工单，为当前监测点位中最多。",
                         station.name, station.opened
                     ),
                     format!(
-                        "{} had the most tickets of the three demo stations in this period: {}.",
+                        "{} had the most tickets of the monitored locations in this period: {}.",
                         station.name, station.opened
                     ),
                 ),
@@ -277,6 +358,68 @@ impl Analysis {
         })))
     }
 
+    pub fn credentials(&self) -> Option<crate::model_settings::Credentials> {
+        self.0.as_ref().map(|s| crate::model_settings::Credentials {
+            api_key: s.key.clone(),
+            model: s.model.clone(),
+        })
+    }
+
+    pub fn configured(
+        credentials: Option<crate::model_settings::Credentials>,
+    ) -> Result<Self, ApiError> {
+        let Some(credentials) = credentials else {
+            return Ok(Self::offline());
+        };
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(4))
+            .timeout(Duration::from_secs(18))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|_| ApiError::bad_request("无法初始化模型连接。"))?;
+        Ok(Self(Some(DeepSeek {
+            client,
+            key: credentials.api_key,
+            model: credentials.model,
+            endpoint: "https://api.deepseek.com/chat/completions".into(),
+        })))
+    }
+
+    pub async fn test_connection(&self) -> Result<(), ApiError> {
+        let service = self
+            .0
+            .as_ref()
+            .ok_or_else(|| ApiError::bad_request("请先填写 DeepSeek API Key。"))?;
+        let response = service.client.post(&service.endpoint).bearer_auth(&service.key)
+            .json(&json!({"model":service.model,"messages":[{"role":"user","content":"Return JSON: {\"ok\":true}"}],"response_format":{"type":"json_object"},"thinking":{"type":"disabled"},"max_tokens":32,"stream":false}))
+            .send().await.map_err(|_| ApiError::bad_request("连接 DeepSeek 失败或超时，请稍后重试。"))?;
+        if !response.status().is_success() {
+            let message = match response.status().as_u16() {
+                401 | 403 => "DeepSeek 拒绝访问，请检查 API Key 和模型权限。",
+                402 | 429 => "DeepSeek 余额不足或请求受限，请检查账户额度。",
+                400 | 404 | 422 => "DeepSeek 不支持此模型或请求格式，请检查模型名称。",
+                _ => "DeepSeek 服务暂不可用，请稍后重试。",
+            };
+            return Err(ApiError::bad_request(message));
+        }
+        let completion = response
+            .json::<Completion>()
+            .await
+            .map_err(|_| ApiError::bad_request("DeepSeek 返回格式异常，未通过连接测试。"))?;
+        let valid = completion
+            .choices
+            .first()
+            .and_then(|c| c.message.content.as_ref())
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .is_some_and(|v| v["ok"] == true);
+        if !valid {
+            return Err(ApiError::bad_request(
+                "DeepSeek 未返回有效测试结果，请检查模型名称。",
+            ));
+        }
+        Ok(())
+    }
+
     pub const fn offline() -> Self {
         Self(None)
     }
@@ -288,12 +431,12 @@ impl Analysis {
         now: i64,
         request_deepseek: bool,
     ) -> Result<Report, ApiError> {
-        let AnalysisRequest { days, lang } = request;
+        let AnalysisRequest { days, lang, scope } = request;
         if !matches!(days, 7 | 28) {
             return Err(ApiError::bad_request("仅支持近 7 天或近 28 天"));
         }
         let start = now - i64::from(days) * DAY_MS;
-        let stats = Stats::from_snapshot(&snapshot, start, now, lang);
+        let stats = Stats::from_snapshot(&snapshot, start, now, lang, scope);
         let suggestions = stats.suggestions(lang);
         let mut report = Report {
             days,
@@ -508,6 +651,7 @@ mod tests {
                 AnalysisRequest {
                     days: 7,
                     lang: Language::English,
+                    scope: Scope::Sorting,
                 },
                 now,
                 false,
@@ -522,6 +666,7 @@ mod tests {
                 AnalysisRequest {
                     days: 7,
                     lang: Language::English,
+                    scope: Scope::Sorting,
                 },
                 now,
                 true,
@@ -538,6 +683,41 @@ mod tests {
                 .evidence
                 .contains("20-minute threshold: 1")
         );
+        task.abort();
+    }
+    #[tokio::test]
+    async fn connection_test_checks_completion_and_sanitizes_provider_errors() {
+        use axum::{http::StatusCode, response::IntoResponse};
+        let app = Router::new().route("/chat/completions", post(|headers: HeaderMap, Json(payload): Json<Value>| async move {
+            assert_eq!(payload["max_tokens"], 32);
+            assert!(payload["messages"].to_string().contains("ok"));
+            assert!(!payload.to_string().contains("stats"));
+            if headers["authorization"] == "Bearer rejected-test-key" {
+                return (StatusCode::UNAUTHORIZED, Json(json!({"error":"rejected-test-key"}))).into_response();
+            }
+            Json(json!({"model":"deepseek-flash","choices":[{"finish_reason":"stop","message":{"content":"{\"ok\":true}"}}]})).into_response()
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/chat/completions", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let service = DeepSeek {
+            client: reqwest::Client::new(),
+            key: "test-key".into(),
+            model: "deepseek-flash".into(),
+            endpoint,
+        };
+        Analysis(Some(service.clone()))
+            .test_connection()
+            .await
+            .unwrap();
+        let bad = Analysis(Some(DeepSeek {
+            key: "rejected-test-key".into(),
+            ..service
+        }))
+        .test_connection()
+        .await
+        .unwrap_err();
+        assert!(!format!("{bad:?}").contains("rejected-test-key"));
         task.abort();
     }
 }

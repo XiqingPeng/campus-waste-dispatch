@@ -12,3 +12,7 @@
 *.db-*
 __pycache__/
 .DS_Store
+
+# Private runtime model credentials (never commit).
+deepseek-config.json
+deepseek-config.json.tmp
