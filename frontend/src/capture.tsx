@@ -11,6 +11,23 @@ type Input =
   | { kind: 'video'; label: string; url: string }
   | { kind: 'camera' };
 
+const cameraStageMessages = {
+  calibrating: '正在校准，请保持取景框为空。',
+  waiting: '可以放入物品，请尽量让手留在框外。',
+  stabilizing: '已检测到画面变化，请稍微稳住物品。',
+  retrying: '请调整物品角度，系统会自动补拍。',
+  adjust: '请将物品稍微移远，或清空取景框后重新开启自动抓拍。',
+  classified: '已分类，请移开物品以识别下一件。',
+  paused: '自动抓拍已暂停，请按提示处理或手动重试。',
+} as const;
+
+type CameraCapture = {
+  image: string;
+  stage: 'retrying' | 'classified' | 'paused';
+  retryAt: number;
+  contents?: ContentsAnswer;
+};
+
 function toJpeg(source: CanvasImageSource, width: number, height: number, x = 0, y = 0) {
   if (!width || !height) throw new Error('还没有可用画面，请稍候或播放视频。');
   const scale = Math.min(1200 / Math.max(width, height), 1);
@@ -139,7 +156,7 @@ async function bestVideoFrame(url: string, currentTime: number, signal: AbortSig
 }
 
 export function Capture({ onResult, visible, result }: {
-  onResult: (result: Result | null) => void; visible: boolean; result: Result | null;
+  onResult: (result: Result | null, keepCaptureInView?: boolean) => void; visible: boolean; result: Result | null;
 }) {
   const { t, text } = useLocale();
   const [input, setInput] = useState<Input>({ kind: 'sample', sample: 'bottle' });
@@ -147,6 +164,7 @@ export function Capture({ onResult, visible, result }: {
   const [openingCamera, setOpeningCamera] = useState(false);
   const [liveConfigured, setLiveConfigured] = useState<boolean>();
   const [autoCamera, setAutoCamera] = useState(false);
+  const [cameraStage, setCameraStage] = useState<keyof typeof cameraStageMessages>('calibrating');
   const [selectedTime, setSelectedTime] = useState<number | null>(null);
   const [confirmationImage, setConfirmationImage] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -158,7 +176,8 @@ export function Capture({ onResult, visible, result }: {
   const sequence = useRef(0);
   const processing = useRef(false);
   const selection = useRef<AbortController | null>(null);
-  const cameraCaptured = useRef(false);
+  const cameraCapture = useRef<CameraCapture | null>(null);
+  const imageToRetake = useRef<string | null>(null);
   const needsRetake = result?.source === 'jev' && !result.category && result.status !== 'unresolved';
 
   function invalidate() {
@@ -210,7 +229,10 @@ export function Capture({ onResult, visible, result }: {
   function startNewInput(keepResult = false) {
     invalidate();
     releaseMedia();
-    if (!keepResult) onResult(null);
+    if (!keepResult) {
+      imageToRetake.current = null;
+      onResult(null);
+    }
     setPending(false);
     setOpeningCamera(false);
     setAutoCamera(false);
@@ -289,16 +311,22 @@ export function Capture({ onResult, visible, result }: {
     selectFrame?: boolean; automaticFrame?: string; answer?: ContentsAnswer;
   } = {}) {
     if (processing.current || (answer && !confirmationImage)) return;
+    const useAutoCamera = input.kind === 'camera' && autoCamera;
+    const previousCapture = useAutoCamera ? cameraCapture.current : null;
     const retake = needsRetake && !answer && !automaticFrame && input.kind !== 'sample';
+    const automaticRetake = automaticFrame !== undefined && previousCapture !== null;
     processing.current = true;
     const version = ++sequence.current;
     setPending(true);
     setError('');
     if (!answer) {
       setSelectedTime(null);
-      setConfirmationImage(null);
-      if (!retake) onResult(null);
+      if (!retake && !automaticRetake) {
+        setConfirmationImage(null);
+        onResult(null);
+      }
     }
+    let capture: CameraCapture | undefined;
     try {
       let body: { image: string; mode: 'live'; followup?: RecognitionFollowup } | { sample: Sample; mode: 'replay' };
       if (answer && confirmationImage) {
@@ -333,21 +361,37 @@ export function Capture({ onResult, visible, result }: {
           }
         }
         data ??= toJpeg(current, current.videoWidth, current.videoHeight);
-        if (input.kind === 'camera' && autoCamera) cameraCaptured.current = true;
-        if (input.kind === 'camera' && !autoCamera) {
-          releaseMedia();
-          setInput({ kind: 'image', label: '相机截图', data });
-        }
         body = { image: data, mode: 'live' };
       }
-      if (body.mode === 'live' && retake) body.followup = { kind: 'retake' };
+      if (body.mode === 'live' && retake) {
+        if (body.image === imageToRetake.current) {
+          throw new Error('当前仍是同一张图片，请重新截帧或上传新照片。');
+        }
+        setConfirmationImage(null);
+        body.followup = { kind: 'retake' };
+      }
+      if (body.mode === 'live' && useAutoCamera && (!answer || previousCapture?.image === body.image)) {
+        const contents = answer ?? (previousCapture?.contents === 'empty' ? 'empty' : undefined);
+        if (contents) body.followup = { kind: 'confirm', field: 'contents', value: contents };
+        capture = { image: body.image, stage: 'retrying', retryAt: 0, contents };
+        cameraCapture.current = capture;
+      }
       const response = await request<Result>('/api/recognize', body);
       if (sequence.current === version) {
+        if (capture && cameraCapture.current === capture) {
+          capture.stage = response.category ? 'classified' : capture.contents === 'present' ? 'paused' : 'retrying';
+          capture.retryAt = performance.now() + 1000;
+        }
+        imageToRetake.current = body.mode === 'live' && !response.category && response.status !== 'unresolved'
+          ? body.image : null;
         setConfirmationImage(response.status === 'confirm' && body.mode === 'live' ? body.image : null);
-        onResult(response);
+        onResult(response, useAutoCamera && !response.category);
       }
     } catch (cause) {
-      if (sequence.current === version) setError(errorText(cause));
+      if (sequence.current === version) {
+        if (capture && cameraCapture.current === capture) capture.stage = 'paused';
+        setError(errorText(cause));
+      }
     } finally {
       if (sequence.current === version) {
         processing.current = false;
@@ -363,45 +407,82 @@ export function Capture({ onResult, visible, result }: {
     const current = video.current;
     if (!current) return;
     const measure = frameSampler();
+    const calibration: Uint8Array[] = [];
+    const recent: boolean[] = [];
+    const sampleInterval = 125;
+    const windowSize = 6;
     let background: Uint8Array | undefined;
     let previous: Uint8Array | undefined;
     let clearSince: number | undefined;
-    let stableSince: number | undefined;
-    let best: { image: string; score: number } | undefined;
-    cameraCaptured.current = false;
+    let best: { image: string; score: number; time: number } | undefined;
+    cameraCapture.current = null;
 
     const timer = window.setInterval(() => {
       if (current.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
       const area = frameArea(current, true);
       const { luma, score } = measure(current, area);
-      background ??= luma;
-      const foreground = changeRatio(background, luma);
-      const moving = previous && changeRatio(previous, luma) > 0.04;
+      const moving = previous !== undefined && changeRatio(previous, luma) > 0.04;
       previous = luma;
-      const now = performance.now();
+      if (!background) {
+        if (moving) calibration.length = 0;
+        calibration.push(luma);
+        if (calibration.length === 4) {
+          background = Uint8Array.from(luma, (_, pixel) =>
+            Math.round(calibration.reduce((sum, frame) => sum + frame[pixel], 0) / calibration.length),
+          );
+          calibration.length = 0;
+          setCameraStage('waiting');
+        }
+        return;
+      }
 
-      if (foreground < 0.035) {
+      const foreground = changeRatio(background, luma);
+      const now = performance.now();
+      if (foreground < 0.035 && !moving) {
         clearSince ??= now;
-        if (now - clearSince >= 500) cameraCaptured.current = false;
+        if (now - clearSince >= 500) {
+          cameraCapture.current = null;
+          background = luma;
+        }
       } else {
         clearSince = undefined;
       }
-      if (cameraCaptured.current || processing.current || foreground < 0.08 || foreground > 0.65 || moving || score <= 0) {
-        stableSince = undefined;
+      const capture = cameraCapture.current;
+      if (processing.current || foreground < 0.05 || foreground > 0.8 ||
+        (capture && (capture.stage !== 'retrying' || now < capture.retryAt))) {
+        recent.length = 0;
         best = undefined;
+        if (!processing.current) {
+          setCameraStage(capture && capture.stage !== 'retrying' ? capture.stage
+            : foreground > 0.8 ? 'adjust' : capture ? 'retrying' : 'waiting');
+        }
         return;
       }
-      stableSince ??= now;
-      if (!best || best.score < score) {
-        best = { image: toJpeg(current, area.width, area.height, area.x, area.y), score };
-      }
-      if (now - stableSince >= 600) submitAutomaticFrame(best.image);
-    }, 125);
 
-    return () => window.clearInterval(timer);
+      setCameraStage(capture ? 'retrying' : 'stabilizing');
+      const usable = !moving && score > 0;
+      recent.push(usable);
+      if (recent.length > windowSize) recent.shift();
+      if (best && now - best.time >= windowSize * sampleInterval) best = undefined;
+      if (usable && (!best || best.score < score)) {
+        const x = Math.max(0, area.x - 0.15 * area.width);
+        const y = Math.max(0, area.y - 0.15 * area.height);
+        const image = toJpeg(current, current.videoWidth - 2 * x, current.videoHeight - 2 * y, x, y);
+        if (image !== capture?.image) best = { image, score, time: now };
+      }
+      if (usable && best && recent.filter(Boolean).length >= 4) {
+        submitAutomaticFrame(best.image);
+      }
+    }, sampleInterval);
+
+    return () => {
+      window.clearInterval(timer);
+      cameraCapture.current = null;
+    };
   }, [visible, input.kind, autoCamera]);
 
   const sample = input.kind === 'sample' ? samples[input.sample] : null;
+  const showRetakeHint = autoCamera ? cameraStage === 'retrying' || cameraStage === 'paused' : needsRetake;
   const currentLabel = sample?.label ?? (input.kind === 'camera' ? '摄像头' : 'label' in input ? input.label : '');
   const uploaded = input.kind === 'image' || input.kind === 'video';
 
@@ -475,12 +556,12 @@ export function Capture({ onResult, visible, result }: {
           ))}
         </div>
       ) : liveConfigured !== false && (
-        <p className="media-note">
+        <p className="media-note" role={input.kind === 'camera' && autoCamera ? 'status' : undefined}>
           {selectedTime !== null ? t('已选取第 {time} 秒的画面。', { time: selectedTime.toFixed(1) })
             : input.kind === 'video' ? t('把进度条拉到物品附近，可自动选帧或手动截帧。')
-            : input.kind === 'camera' ? t(autoCamera ? '将物品放进框内并稳住，尽量让手留在框外。移开物品后可识别下一件。' : '开启自动抓拍前，请固定摄像头并移开框内的手和物品。')
+            : input.kind === 'camera' ? t(autoCamera ? cameraStageMessages[cameraStage] : '开启自动抓拍前，请固定摄像头并移开框内的手和物品。')
             : t('点击识别后，单张图像将发送至 JEV 接口。')}
-          {needsRetake && <> {result.question ? text(result.question) : t('请换个角度拍清材质、标签或内容物，再识别同一件物品。')}</>}
+          {showRetakeHint && result && !result.category && <> {result.question ? text(result.question) : t('请换个角度拍清材质、标签或内容物，再识别同一件物品。')}</>}
         </p>
       )}
 
@@ -510,7 +591,10 @@ export function Capture({ onResult, visible, result }: {
           </button>
         )}
         {input.kind === 'camera' && (
-          <button className="outline recognize" onClick={() => setAutoCamera(!autoCamera)} disabled={pending && !autoCamera}>
+          <button className="outline recognize" onClick={() => {
+            setCameraStage('calibrating');
+            setAutoCamera(!autoCamera);
+          }} disabled={pending && !autoCamera}>
             {t(autoCamera ? '关闭自动抓拍' : '开启自动抓拍')}
           </button>
         )}

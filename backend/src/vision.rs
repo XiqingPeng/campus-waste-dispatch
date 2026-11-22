@@ -88,7 +88,8 @@ enum Issue {
     ContentsHidden,
     Conflict,
     SeparationRequired,
-    LowEvidence,
+    UncertainCategory,
+    LowCategoryProbability,
     PossibleHazard,
 }
 
@@ -103,7 +104,9 @@ impl Issue {
             Self::Conflict => "画面与确认信息不一致，请按现场标识处理。",
             Self::SeparationRequired => "请按现场标识分开处理内容物或部件，再识别要投放的物品。",
             Self::PossibleHazard => "请拍清物品标签或有害垃圾标识。",
-            Self::Ready | Self::LowEvidence => "请把一件物品放在画面中央，并拍清楚它的材质和内容物。",
+            Self::Ready | Self::UncertainCategory | Self::LowCategoryProbability => {
+                "请把一件物品放在画面中央，并拍清楚它的材质和内容物。"
+            }
         }
     }
 }
@@ -120,6 +123,8 @@ pub struct Recognition {
     reason: Option<Issue>,
     #[serde(skip_serializing_if = "Option::is_none")]
     model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    candidate: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     probability: Option<f64>,
 }
@@ -144,6 +149,7 @@ impl Sample {
             status: None,
             reason: None,
             model: None,
+            candidate: None,
             probability: None,
         }
     }
@@ -300,27 +306,27 @@ fn request_body(model: &str, format: &str, data: &str, followup: Option<Followup
         "questions": {
             "category": {
                 "type": "choice",
-                "instructions": "Choose the campus disposal category for the single item in `photo`. Use visible evidence and `contents_confirmation` if provided. Treat that answer only as a claim about the pictured container, never as evidence of material or as overriding visible contents. Choose uncertain if evidence is missing, conflicting, or components or contents need separate handling.",
+                "instructions": "Classify the held item in `photo`, or the centered item if none is held. Ignore faces, hands, and background clutter. Choose the most likely bin from the visible material and known contents. Use `contents_confirmation` if given.",
                 "criteria": {
-                    "recycle": "Clearly recyclable material such as clean paper, cardboard, an empty identifiable beverage bottle or metal can.",
-                    "food": "Food waste itself, such as fruit peels or leftover food without packaging.",
-                    "hazard": "Identifiable hazardous waste such as a discarded battery, fluorescent tube or medicine.",
-                    "residual": "An identifiable item that belongs in residual waste, such as a used tissue or visibly soiled, non-recyclable packaging.",
-                    "uncertain": "Insufficient or conflicting evidence, no single identifiable item, or contents and packaging that require separation."
+                    "recycle": "Recyclable waste",
+                    "food": "Food waste",
+                    "hazard": "Hazardous waste (e.g. discarded batteries, fluorescent tubes, or medication itself)",
+                    "residual": "Other waste (e.g. used tissues or soiled non-recyclable packaging)",
+                    "uncertain": "Uncertain (no clear target, a genuine tie between bins, or separate disposal required)"
                 }
             },
             "issue": {
                 "type": "choice",
-                "instructions": "Identify the main barrier to sorting the single item in `photo`. If `contents_confirmation` is empty and the photo clearly shows remaining contents, choose conflict. If remaining contents or components require separate handling, choose separation_required. Choose contents_hidden only for a drink container whose contents cannot be seen, when the answer about remaining liquid would help determine how to sort it.",
+                "instructions": "Assess the held item in `photo`, or the centered item if none is held. Ignore faces, hands, and background clutter. Use `contents_confirmation` if given. Choose ready unless a concrete issue changes the bin or prevents sorting.",
                 "criteria": {
-                    "ready": "One item is clear and the evidence is sufficient to choose a disposal category.",
-                    "no_item": "There is no clear target item.",
-                    "multiple_items": "Several separate items are in view, with no unambiguous target.",
-                    "poor_view": "Blur, distance, poor light, or obstruction hides the item.",
-                    "material_unclear": "Its material or identifying label is needed and cannot be seen clearly.",
-                    "contents_hidden": "The container's remaining liquid cannot be seen or inferred, and no usable confirmation was supplied.",
-                    "conflict": "Visible evidence contradicts the user's confirmation.",
-                    "separation_required": "The contents or components need to be separated before disposal."
+                    "ready": "The target can be sorted.",
+                    "no_item": "No identifiable waste target.",
+                    "multiple_items": "Several equally plausible waste targets.",
+                    "poor_view": "Blur or obstruction hides a detail needed for sorting.",
+                    "material_unclear": "Material or label is unclear and could change the bin.",
+                    "contents_hidden": "A drink container has hidden liquid status that matters for sorting, with no confirmation.",
+                    "conflict": "Visible contents contradict `contents_confirmation`.",
+                    "separation_required": "Visible contents or parts need separate disposal."
                 }
             }
         }
@@ -377,62 +383,66 @@ impl SystemOneResponse {
             None
         } else {
             Some(
-                serde_json::from_value(Value::String(category.choice))
+                serde_json::from_value(Value::String(category.choice.clone()))
                     .map_err(|_| malformed_response())?,
             )
         };
         let issue: Issue =
             serde_json::from_value(Value::String(issue.choice)).map_err(|_| malformed_response())?;
-        let hazard_uncertain = if matches!(candidate, Some(Category::Hazard)) {
+        let hazard = matches!(candidate, Some(Category::Hazard));
+        let hazard_uncertain = if hazard {
             probability < MIN_HAZARD_PROBABILITY
         } else {
             hazard_probability >= POSSIBLE_HAZARD_PROBABILITY
         };
-        let reason = if matches!(issue, Issue::Conflict) {
-            Some(issue)
-        } else if matches!(
+        let issue_is_confident = issue_probability >= MIN_PROBABILITY;
+        let confirmed = matches!(followup, Some(Followup::Confirm { .. }));
+        let contents_present = matches!(
             followup,
             Some(Followup::Confirm { value: Contents::Present, .. })
-        ) {
-            Some(Issue::SeparationRequired)
-        } else if issue_probability < MIN_PROBABILITY {
-            Some(Issue::LowEvidence)
-        } else if !matches!(issue, Issue::Ready) {
-            Some(issue)
-        } else if hazard_uncertain {
-            Some(Issue::PossibleHazard)
-        } else if candidate.is_none() || probability < MIN_PROBABILITY {
-            Some(Issue::LowEvidence)
-        } else {
-            None
+        );
+        let reliable_issue = issue_is_confident.then_some(issue);
+        let reason = match reliable_issue {
+            Some(Issue::Conflict) if confirmed => Some(Issue::Conflict),
+            _ if contents_present => Some(Issue::SeparationRequired),
+            Some(reason @ (Issue::NoItem | Issue::MultipleItems | Issue::SeparationRequired)) => {
+                Some(reason)
+            }
+            _ if hazard_uncertain => Some(Issue::PossibleHazard),
+            _ if candidate.is_some() && probability >= MIN_PROBABILITY => None,
+            Some(reason @ (Issue::PoorView | Issue::MaterialUnclear | Issue::ContentsHidden)) => {
+                Some(reason)
+            }
+            _ if candidate.is_none() => Some(Issue::UncertainCategory),
+            _ => Some(Issue::LowCategoryProbability),
         };
         let (status, question) = match reason {
             None => (RecognitionStatus::Classified, None),
             Some(reason @ (Issue::Conflict | Issue::SeparationRequired)) => {
                 (RecognitionStatus::Unresolved, Some(reason.question()))
             }
-            Some(_) if followup.is_some() => (
-                RecognitionStatus::Unresolved,
-                Some("仍无法判断，请按现场标识处理。"),
-            ),
-            Some(reason @ Issue::ContentsHidden) => {
+            Some(reason @ Issue::ContentsHidden) if !confirmed => {
                 (RecognitionStatus::Confirm, Some(reason.question()))
+            }
+            Some(reason) if followup.is_some() => {
+                (RecognitionStatus::Unresolved, Some(reason.question()))
             }
             Some(reason) => (RecognitionStatus::Retake, Some(reason.question())),
         };
-        let category = if reason.is_none() { candidate } else { None };
+        let accepted_category = if reason.is_none() { candidate } else { None };
         Ok(Recognition {
-            item: if category.is_some() {
+            item: if accepted_category.is_some() {
                 "已识别物品"
             } else {
                 "待确认物品"
             },
-            category,
+            category: accepted_category,
             question,
             source: "jev",
             status: Some(status),
             reason,
             model: Some(self.model),
+            candidate: Some(category.choice),
             probability: Some(probability),
         })
     }
@@ -494,27 +504,37 @@ mod tests {
     }
 
     #[test]
-    fn unresolved_evidence_has_a_specific_next_step() {
+    fn category_leads_and_unresolved_evidence_has_a_specific_next_step() {
         let present = Followup::Confirm { field: ConfirmationField::Contents, value: Contents::Present };
-        for (issue, probability, hazard, followup, status, reason) in [
-            ("ready", 0.53, 0.01, None, "retake", "low_evidence"),
-            ("ready", 0.72, 0.23, None, "retake", "possible_hazard"),
-            ("contents_hidden", 0.90, 0.01, None, "confirm", "contents_hidden"),
-            ("contents_hidden", 0.90, 0.01, Some(present), "unresolved", "separation_required"),
-            ("conflict", 0.90, 0.01, Some(present), "unresolved", "conflict"),
-            ("material_unclear", 0.90, 0.01, Some(Followup::Retake), "unresolved", "material_unclear"),
+        for (choice, probability, issue, issue_probability, hazard, followup, status, reason) in [
+            ("residual", 0.53, "ready", 0.95, 0.01, None, "retake", Some("low_category_probability")),
+            ("residual", 0.74, "ready", 0.62, 0.01, None, "classified", None),
+            ("residual", 0.90, "material_unclear", 0.95, 0.01, None, "classified", None),
+            ("residual", 0.90, "multiple_items", 0.95, 0.01, None, "retake", Some("multiple_items")),
+            ("residual", 0.72, "ready", 0.62, 0.23, None, "retake", Some("possible_hazard")),
+            ("hazard", 0.80, "ready", 0.95, 0.80, None, "retake", Some("possible_hazard")),
+            ("hazard", 0.90, "ready", 0.62, 0.90, None, "classified", None),
+            ("uncertain", 0.90, "contents_hidden", 0.95, 0.01, Some(Followup::Retake), "confirm", Some("contents_hidden")),
+            ("residual", 0.90, "contents_hidden", 0.95, 0.01, Some(present), "unresolved", Some("separation_required")),
+            ("residual", 0.90, "conflict", 0.95, 0.01, None, "classified", None),
+            ("residual", 0.90, "conflict", 0.95, 0.01, Some(present), "unresolved", Some("conflict")),
+            ("residual", 0.60, "material_unclear", 0.95, 0.01, Some(Followup::Retake), "unresolved", Some("material_unclear")),
         ] {
             let response: SystemOneResponse = serde_json::from_value(json!({
                 "model": DEFAULT_MODEL,
                 "answers": {
-                    "category": {"type": "choice", "choice": "residual", "probabilities": {"residual": probability, "hazard": hazard}},
-                    "issue": {"type": "choice", "choice": issue, "probabilities": {issue: 0.95}}
+                    "category": {"type": "choice", "choice": choice, "probabilities": {choice: probability, "hazard": hazard}},
+                    "issue": {"type": "choice", "choice": issue, "probabilities": {issue: issue_probability}}
                 }
             })).unwrap();
             let payload = serde_json::to_value(response.recognition(followup).unwrap()).unwrap();
-            assert!(payload["category"].is_null());
+            assert_eq!(payload["category"].as_str(), (status == "classified").then_some(choice));
+            assert_eq!(payload["candidate"], choice);
             assert_eq!(payload["status"], status);
-            assert_eq!(payload["reason"], reason);
+            assert_eq!(payload["reason"].as_str(), reason);
+            if reason == Some("material_unclear") {
+                assert_eq!(payload["question"], Issue::MaterialUnclear.question());
+            }
         }
     }
 }

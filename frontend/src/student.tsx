@@ -9,13 +9,15 @@ export function Student({ state, station, visible, connected }: {
   state: Snapshot | null; station: Station | undefined; visible: boolean; connected: boolean;
 }) {
   const { t, text } = useLocale();
-  const [result, setResult] = useState<Result | null>(null);
+  const [{ result, keepCaptureInView }, setRecognition] = useState<{ result: Result | null; keepCaptureInView: boolean }>({
+    result: null, keepCaptureInView: false,
+  });
   const guidancePanel = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (!result || result.status === 'confirm' || !visible || !window.matchMedia('(max-width: 780px)').matches) return;
+    if (!result || result.status === 'confirm' || keepCaptureInView || !visible || !window.matchMedia('(max-width: 780px)').matches) return;
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     guidancePanel.current?.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
-  }, [result, visible]);
+  }, [result, keepCaptureInView, visible]);
   const guidance = result?.category && state && station && connected
     ? availability(state, station, result.category)
     : null;
@@ -24,10 +26,13 @@ export function Student({ state, station, visible, connected }: {
   const alternate = guidance?.alternate;
   const stationBins = state?.bins.filter((bin) => bin.station_id === station?.id) ?? [];
   const decisionStyle = local ? 'positive' : alternate ? 'redirect' : 'caution';
+  const nextStep = result?.status === 'retake' ? '请补拍物品'
+    : result?.status === 'confirm' ? '请确认杯内剩液'
+    : result?.status === 'unresolved' ? '暂无法分类' : '需要进一步确认';
 
   return (
     <div className="student-grid">
-      <Capture onResult={setResult} visible={visible} result={result} />
+      <Capture onResult={(result, keepCaptureInView = false) => setRecognition({ result, keepCaptureInView })} visible={visible} result={result} />
       <div className="student-right">
         <section className="panel guidance-panel" ref={guidancePanel} aria-labelledby="guidance-title">
           <div className="panel-heading">
@@ -60,7 +65,7 @@ export function Student({ state, station, visible, connected }: {
                 <h3>
                   {local && result.category ? t('请投{category}', { category: t(categories[result.category].label) })
                     : alternate ? t('请前往 {station}', { station: text(alternate.name) })
-                    : t(result.category ? '暂不可投放' : '需要进一步确认')}
+                    : t(result.category ? '暂不可投放' : nextStep)}
                 </h3>
                 <p>
                   {local ? t('请将物品投进亮灯的桶口。')
