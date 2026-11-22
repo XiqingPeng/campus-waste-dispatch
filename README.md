@@ -36,7 +36,7 @@ cargo run --locked --manifest-path backend/Cargo.toml
 
 ## Jev 实时图片判断
 
-在启动 Rust 服务的进程中配置环境变量 `TYPESAFE_API_KEY`，然后使用学生端的实时识别。浏览器会把照片或视频当前帧转成 JPEG，再由服务端发送到 TypeSafe System One。Jev 回答预设的 Choice 选项，应用将物品结果映射成四类桶位或一条澄清提示。模型遇到超出样例范围的物品时可以弃权。
+在启动 Rust 服务的进程中配置环境变量 `TYPESAFE_API_KEY`，然后使用学生端的实时识别。浏览器把照片、视频选帧或摄像头抓拍转成单张 JPEG，再由服务端交给 TypeSafe System One 判断桶类和证据缺口。证据不足时，页面会提示补拍，或询问杯内是否还有剩液。
 
 请用只含目标物品的画面。演示样例回放使用固定结果。LFT2 请求 TypeSafe 时收到 HTTP 451，课程演示采用样例回放。实时入口需要可访问的运行环境及有效的 TypeSafe 凭据。[TypeSafe 图片接口](https://docs.typesafe.ai/images)
 

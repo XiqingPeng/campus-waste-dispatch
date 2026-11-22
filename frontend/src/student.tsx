@@ -12,7 +12,7 @@ export function Student({ state, station, visible, connected }: {
   const [result, setResult] = useState<Result | null>(null);
   const guidancePanel = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (!result || !visible || !window.matchMedia('(max-width: 780px)').matches) return;
+    if (!result || result.status === 'confirm' || !visible || !window.matchMedia('(max-width: 780px)').matches) return;
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     guidancePanel.current?.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
   }, [result, visible]);
@@ -27,7 +27,7 @@ export function Student({ state, station, visible, connected }: {
 
   return (
     <div className="student-grid">
-      <Capture onResult={setResult} visible={visible} />
+      <Capture onResult={setResult} visible={visible} result={result} />
       <div className="student-right">
         <section className="panel guidance-panel" ref={guidancePanel} aria-labelledby="guidance-title">
           <div className="panel-heading">
@@ -53,7 +53,8 @@ export function Student({ state, station, visible, connected }: {
                 </span>
                 <span className="decision-overline">
                   {result.category
-                    ? t('{name}（{detail}）', { name: text(result.item), detail: t(categories[result.category].label) })
+                    ? result.status === 'classified' ? t(categories[result.category].label)
+                      : t('{name}（{detail}）', { name: text(result.item), detail: t(categories[result.category].label) })
                     : text(result.item)}
                 </span>
                 <h3>
