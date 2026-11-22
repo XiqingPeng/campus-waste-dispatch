@@ -37,7 +37,15 @@ export type Ticket = { id: number; bin_id: string; status: TicketStatus; opened_
 export type Station = { id: string; code?: string; name: string; detail: string; x: number; y: number; zone?: string; map_x?: number; map_y?: number };
 export type CollectionPoint = { station_id: string; station_code?: string; name: string; zone: string; zone_key: string; building: string; map_x: number; map_y: number; is_simulated: boolean };
 export type Snapshot = { collection_points?: CollectionPoint[]; retired_collection_points?: CollectionPoint[]; retired_bins?: Bin[]; retired_tickets?: Ticket[]; bins: Bin[]; tickets: Ticket[]; stations: Station[]; recommendation: number | null };
-export type Result = { item: string; category: Category | null; question: string | null; source: 'jev' | 'replay' };
+export type ContentsAnswer = 'present' | 'empty';
+export type RecognitionFollowup = { kind: 'retake' } | { kind: 'confirm'; field: 'contents'; value: ContentsAnswer };
+export type Result = {
+  item: string;
+  category: Category | null;
+  question: string | null;
+  source: 'jev' | 'replay';
+  status?: 'classified' | 'retake' | 'confirm' | 'unresolved';
+};
 
 export function availability(state: Snapshot, station: Station, category: Category) {
   const bins = state.bins.filter((bin) => bin.category === category);

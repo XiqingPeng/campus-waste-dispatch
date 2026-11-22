@@ -168,6 +168,8 @@ svg { flex: none; }
 .sample-row button:hover, .sample-row button[aria-pressed="true"] { background: var(--wash); color: var(--accent-dark); }
 .sample-row button[aria-pressed="true"] { font-weight: 700; border-color: #668777; }
 .media-note { color: var(--muted); font-size: .9rem; margin: 15px 0 19px; }
+.capture-actions { display: grid; gap: 8px; }
+.confirmation-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .recognize { width: 100%; min-height: 50px; }
 
 .decision {
