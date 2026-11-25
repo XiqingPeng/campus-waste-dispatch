@@ -1,0 +1,7 @@
+{
+  "sample_seconds": 5,
+  "confirm_samples": 3,
+  "clear_samples": 3,
+  "motion_ratio": 0.025,
+  "cooldown_seconds": 2
+}
