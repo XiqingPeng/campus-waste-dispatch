@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>智能垃圾监控</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="top">
+      <div><h1>智能垃圾监控</h1><p>摄像头抓拍与满载记录</p></div>
+      <span id="mode" class="mode">正在连接</span>
+    </header>
+    <p id="feedback" class="feedback" role="status" hidden></p>
+    <div class="workspace">
+      <section class="panel" aria-labelledby="capture-title">
+        <div class="section-header"><h2 id="capture-title">摄像头画面</h2><span id="connection" class="badge">等待画面</span></div>
+        <div id="image-wrap" class="image-wrap">
+          <p id="placeholder">打开摄像头或回放后，这里会显示实时画面。</p>
+          <img id="frame" alt="当前摄像头画面" hidden>
+          <canvas id="canvas" aria-label="标定多边形叠加层"></canvas>
+          <span id="test-overlay" class="test-overlay" hidden>测试模式</span>
+        </div>
+        <p id="stream-detail" class="muted">正在连接本机监测服务。</p>
+        <div id="hardware-controls" class="actions" hidden>
+          <label>摄像头 <select id="camera-index"><option value="auto">自动</option></select></label>
+          <button id="switch-camera" type="button">应用设备</button>
+        </div>
+        <div id="replay-controls" class="actions" hidden>
+          <button id="pause" type="button">暂停</button><button id="restart" type="button">从头回放</button>
+        </div>
+        <p id="hand-warning" class="muted" hidden></p>
+      </section>
+      <section class="panel" aria-labelledby="status-title">
+        <div class="section-header"><h2 id="status-title">垃圾桶状态</h2><span id="full-state" class="badge">无法判断</span></div>
+        <p id="full-detail" class="muted">等待首次标定和采样。</p>
+        <dl class="details">
+          <div><dt>桶号</dt><dd id="bin-label">未标定</dd></div>
+          <div><dt>满载确认时间</dt><dd id="full-time">—</dd></div>
+          <div><dt>最近有效画面</dt><dd id="seen">—</dd></div>
+        </dl>
+        <button id="clean" type="button" disabled>登记已清理，开始复核</button>
+        <p id="clean-note" class="muted">清理后可在此登记。连续确认桶已清空后，状态会恢复正常。</p>
+        <details id="calibration">
+          <summary>摄像头与垃圾桶标定</summary>
+          <p>选择下列区域，然后在左侧画面上逐点标记边界。每个区域至少 3 个顶点。</p>
+          <div id="region-buttons" class="actions">
+            <button data-region="mouth" type="button">桶口</button>
+            <button data-region="interior" type="button">桶内</button>
+            <button data-region="band" type="button">满载参考带</button>
+            <button id="undo-point" type="button">撤销点</button>
+            <button id="clear-region" type="button">清空本区</button>
+          </div>
+          <div class="actions refs">
+            <button id="empty-ref" type="button">采集空桶参考图</button>
+            <button id="full-ref" type="button">采集接近满载图</button>
+          </div>
+          <div class="reference-pictures">
+            <img id="empty-preview" alt="空桶参考图" hidden><img id="full-preview" alt="接近满载参考图" hidden>
+          </div>
+          <div class="actions">
+            <label>桶号 <input id="label" value="BIN-01" maxlength="80"></label>
+            <button class="primary" id="save-calibration" type="button">保存标定</button>
+            <button id="manual" type="button">手动测试抓拍</button>
+          </div>
+        </details>
+      </section>
+    </div>
+    <section class="panel history" aria-labelledby="drop-title">
+      <div class="section-header"><h2 id="drop-title">投放记录</h2><a href="/api/export/drops.csv">导出 CSV</a></div>
+      <div id="drops"></div>
+    </section>
+    <section class="panel history" aria-labelledby="full-title">
+      <div class="section-header"><h2 id="full-title">满载记录</h2><a href="/api/export/fullness.csv">导出 CSV</a></div>
+      <div class="table-scroll"><table>
+        <thead><tr><th scope="col">事件</th><th scope="col">垃圾桶</th><th scope="col">首次达到阈值</th><th scope="col">确认满载</th><th scope="col">清理复核</th><th scope="col">状态</th></tr></thead>
+        <tbody id="full-history"></tbody>
+      </table></div>
+    </section>
+  </main>
+</body>
+</html>
