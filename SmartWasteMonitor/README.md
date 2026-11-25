@@ -1,5 +1,6 @@
 # 智能垃圾监控
 
+[下载 Windows x64 完整离线包](https://github.com/XiqingPeng/campus-waste-dispatch/releases/download/smartwaste-monitor-v0.1.0/SmartWasteMonitor-Windows-x64.zip)。该 ZIP 随附 Windows Python、依赖轮子和 MediaPipe 手部模型。
 适用于 **Windows 10/11，64 位 Intel 或 AMD，普通 USB UVC 摄像头**。一台摄像头监测一个完成标定的垃圾桶。浏览器管理页在本机运行。
 
 ## 现在没有摄像头
